@@ -9,11 +9,10 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL vuklanErrorCallback(VkDebugUtilsMessageSev
                                                           VkDebugUtilsMessageTypeFlagsEXT messageType,
                                                           const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
                                                           void *pUserData) {
-
-    if(messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+    if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
         Logger::error(std::string(pCallbackData->pMessage));
-    } else if(messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
-        Logger::warning( std::string(pCallbackData->pMessage));
+    } else if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
+        Logger::warning(std::string(pCallbackData->pMessage));
     } else {
         Logger::debug(std::string(pCallbackData->pMessage));
     }
@@ -60,8 +59,14 @@ GraphicsBackend::GraphicsBackend() {
     VULKAN_HPP_DEFAULT_DISPATCHER.init(*instance);
 
     vk::DebugUtilsMessengerCreateInfoEXT debug_utils_messenger_create_info = {
-        .messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError | vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo,
-        .messageType = vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation | vk::DebugUtilsMessageTypeFlagBitsEXT::eDeviceAddressBinding,
+        .messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose |
+                           vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
+                           vk::DebugUtilsMessageSeverityFlagBitsEXT::eError |
+                           vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo,
+        .messageType = vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
+                       vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance |
+                       vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation |
+                       vk::DebugUtilsMessageTypeFlagBitsEXT::eDeviceAddressBinding,
         .pfnUserCallback = vuklanErrorCallback,
         .pUserData = nullptr,
     };
@@ -71,37 +76,38 @@ GraphicsBackend::GraphicsBackend() {
     surface = window->createWindowSurfaceKHRUnique(*instance);
 
     std::array required_device_extensions = {vk::KHRSwapchainExtensionName};
-    for (auto device : instance->enumeratePhysicalDevices()) {
+    for (auto device: instance->enumeratePhysicalDevices()) {
         auto device_properties = device.getProperties();
-        if(device_properties.deviceType != vk::PhysicalDeviceType::eDiscreteGpu) continue;
+        if (device_properties.deviceType != vk::PhysicalDeviceType::eDiscreteGpu) continue;
 
         bool missing_required_extension = false;
         auto device_extensions = device.enumerateDeviceExtensionProperties();
-        for (auto required_extension : required_device_extensions) {
-            if(std::find_if(device_extensions.begin(), device_extensions.end(), [required_extension](auto &&extension) {
-                return strcmp(extension.extensionName, required_extension);
-            }) == device_extensions.end()) {
+        for (auto required_extension: required_device_extensions) {
+            if (std::find_if(device_extensions.begin(), device_extensions.end(),
+                             [required_extension](auto &&extension) {
+                                 return strcmp(extension.extensionName, required_extension);
+                             }) == device_extensions.end()) {
                 missing_required_extension = true;
                 break;
             }
         }
-        if(missing_required_extension) continue;
+        if (missing_required_extension) continue;
 
         uint32_t queue_index = -1;
-        for (auto queue_family_properties : device.getQueueFamilyProperties()) {
+        for (auto queue_family_properties: device.getQueueFamilyProperties()) {
             queue_index++;
 
-            if(!(queue_family_properties.queueFlags & vk::QueueFlagBits::eGraphics)) continue;
-            if(!device.getSurfaceSupportKHR(queue_index, *surface)) continue;
+            if (!(queue_family_properties.queueFlags & vk::QueueFlagBits::eGraphics)) continue;
+            if (!device.getSurfaceSupportKHR(queue_index, *surface)) continue;
 
             this->graphicsQueueIndex = queue_index;
             this->phyicalDevice = device;
             break;
         }
-        if(this->graphicsQueueIndex != -1) break;
+        if (this->graphicsQueueIndex != -1) break;
     }
 
-    if(this->phyicalDevice == nullptr)
+    if (this->phyicalDevice == nullptr)
         Logger::panic("No suitable GPU found");
 
     std::string device_name = this->phyicalDevice.getProperties().deviceName;
@@ -110,7 +116,7 @@ GraphicsBackend::GraphicsBackend() {
 
     constexpr float queue_priority = 1.0f;
     std::array queue_create_infos = {
-        vk::DeviceQueueCreateInfo {
+        vk::DeviceQueueCreateInfo{
             .queueFamilyIndex = graphicsQueueIndex,
             .queueCount = 1,
             .pQueuePriorities = &queue_priority,
@@ -137,7 +143,6 @@ GraphicsBackend::GraphicsBackend() {
 }
 
 GraphicsBackend::~GraphicsBackend() {
-
 }
 
 void GraphicsBackend::createRenderPass() {
@@ -177,14 +182,14 @@ void GraphicsBackend::createRenderPass() {
         .pAttachments = &color_attachment_description,
         .subpassCount = 1,
         .pSubpasses = &subpass_description,
-        .dependencyCount =  1,
+        .dependencyCount = 1,
         .pDependencies = &subpass_dependency,
     };
 
     renderPass = device->createRenderPassUnique(render_pass_create_info);
 
     framebuffers.clear();
-    for (auto &swapchain_image_view : swapchainColorImages) {
+    for (auto &swapchain_image_view: swapchainColorImages) {
         vk::FramebufferCreateInfo framebuffer_create_info = {
             .renderPass = *renderPass,
             .attachmentCount = 1,
@@ -206,24 +211,27 @@ void GraphicsBackend::createSwapchain() {
         return (format.format == vk::Format::eB8G8R8A8Srgb || format.format == vk::Format::eR8G8B8A8Srgb) && format.
                colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear;
     });
-    if(surface_format_iter == surface_formats.end())
+    if (surface_format_iter == surface_formats.end())
         Logger::panic("No suitable surface fromat found");
     surfaceFormat = surface_format_iter[0];
 
-    auto surface_fifo_present_mode_iter = std::find_if(surface_present_modes.begin(), surface_present_modes.end(), [](auto &&mode) {
-        return mode == vk::PresentModeKHR::eFifo;
-    });
+    auto surface_fifo_present_mode_iter = std::find_if(surface_present_modes.begin(), surface_present_modes.end(),
+                                                       [](auto &&mode) {
+                                                           return mode == vk::PresentModeKHR::eFifo;
+                                                       });
 
-    if(surface_fifo_present_mode_iter == surface_present_modes.end())
+    if (surface_fifo_present_mode_iter == surface_present_modes.end())
         Logger::panic("No suitable present mode found");
     auto surface_present_mode = surface_present_modes[0];
     auto swapchain_image_count = surface_capabilities.maxImageCount + 1;
-    if(surface_capabilities.maxImageCount > 0 && swapchain_image_count > surface_capabilities.maxImageCount)
+    if (surface_capabilities.maxImageCount > 0 && swapchain_image_count > surface_capabilities.maxImageCount)
         swapchain_image_count = surface_capabilities.maxImageCount;
 
     surfaceExtents = window->getFramebufferSize();
-    surfaceExtents.width = std::clamp(surfaceExtents.width, surface_capabilities.minImageExtent.width, surface_capabilities.maxImageExtent.width);
-    surfaceExtents.height = std::clamp(surfaceExtents.height, surface_capabilities.minImageExtent.height, surface_capabilities.maxImageExtent.height);
+    surfaceExtents.width = std::clamp(surfaceExtents.width, surface_capabilities.minImageExtent.width,
+                                      surface_capabilities.maxImageExtent.width);
+    surfaceExtents.height = std::clamp(surfaceExtents.height, surface_capabilities.minImageExtent.height,
+                                       surface_capabilities.maxImageExtent.height);
 
     vk::SwapchainCreateInfoKHR swapchain_create_info = {
         .surface = *surface,
@@ -245,7 +253,7 @@ void GraphicsBackend::createSwapchain() {
     auto swapchain_images = device->getSwapchainImagesKHR(*swapchain);
 
     swapchainColorImages.clear();
-    for (auto swapchain_image : swapchain_images) {
+    for (auto swapchain_image: swapchain_images) {
         vk::ImageViewCreateInfo image_view_create_info = {
             .image = swapchain_image,
             .viewType = vk::ImageViewType::e2D,

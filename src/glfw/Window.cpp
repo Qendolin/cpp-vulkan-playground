@@ -1,7 +1,7 @@
 #include "Window.h"
 
 namespace glfw {
-    Window::Window(const WindowCreateInfo& create_info, GLFWmonitor *monitor, GLFWwindow *share) {
+    Window::Window(const WindowCreateInfo &create_info, GLFWmonitor *monitor, GLFWwindow *share) {
         glfwDefaultWindowHints();
         glfwWindowHint(GLFW_RESIZABLE, create_info.resizable);
         glfwWindowHint(GLFW_VISIBLE, create_info.visible);
@@ -61,7 +61,4 @@ namespace glfw {
         vk::resultCheck(static_cast<vk::Result>(result), "glfwCreateWindowSurface");
         return vk::UniqueSurfaceKHR(surface_handle, instance);
     }
-
-
-
 }

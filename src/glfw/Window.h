@@ -69,9 +69,12 @@ namespace glfw {
     };
 
     class Window {
-        GLFWwindow* handle = nullptr;
+        GLFWwindow *handle = nullptr;
+
     public:
-        explicit Window(const WindowCreateInfo& create_info, GLFWmonitor *monitor = nullptr, GLFWwindow *share = nullptr);
+        explicit Window(const WindowCreateInfo &create_info, GLFWmonitor *monitor = nullptr,
+                        GLFWwindow *share = nullptr);
+
         ~Window();
 
         [[nodiscard]] bool shouldClose() const;
@@ -80,7 +83,8 @@ namespace glfw {
 
         vk::UniqueSurfaceKHR createWindowSurfaceKHRUnique(vk::Instance instance);
 
-        operator GLFWwindow*() const { // NOLINT(*-explicit-constructor)
+        operator GLFWwindow *() const {
+            // NOLINT(*-explicit-constructor)
             return handle;
         }
     };

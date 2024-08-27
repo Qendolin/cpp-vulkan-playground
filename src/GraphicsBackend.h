@@ -32,9 +32,12 @@ public:
     vk::UniqueCommandBuffer commandBuffer;
 
     GraphicsBackend();
+
     ~GraphicsBackend();
 
     void createRenderPass();
+
     void createSwapchain();
+
     void createCommandBuffers();
 };
