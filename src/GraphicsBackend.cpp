@@ -142,8 +142,7 @@ GraphicsBackend::GraphicsBackend() {
     graphicsQueue = device->getQueue(graphicsQueueIndex, 0);
 }
 
-GraphicsBackend::~GraphicsBackend() {
-}
+GraphicsBackend::~GraphicsBackend() = default;
 
 void GraphicsBackend::createRenderPass() {
     vk::AttachmentDescription color_attachment_description = {
@@ -271,7 +270,26 @@ void GraphicsBackend::createSwapchain() {
     }
 }
 
-void GraphicsBackend::createCommandBuffers() {
+void GraphicsBackend::recreateSwapchain() {
+    // wait if window is minimized
+    int width = 0, height = 0;
+    glfwGetFramebufferSize(*window, &width, &height);
+    while (width == 0 || height == 0) {
+        glfwGetFramebufferSize(*window, &width, &height);
+        glfwWaitEvents();
+    }
+
+    device->waitIdle();
+
+    framebuffers.clear();
+    swapchainColorImages.clear();
+    swapchain.reset();
+
+    createSwapchain();
+    createRenderPass();
+}
+
+void GraphicsBackend::createCommandBuffers(int max_frames_in_flight) {
     vk::CommandPoolCreateInfo command_pool_create_info = {
         .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
         .queueFamilyIndex = graphicsQueueIndex
@@ -281,8 +299,8 @@ void GraphicsBackend::createCommandBuffers() {
     vk::CommandBufferAllocateInfo command_buffer_allocate_info = {
         .commandPool = *commandPool,
         .level = vk::CommandBufferLevel::ePrimary,
-        .commandBufferCount = 1
+        .commandBufferCount = static_cast<uint32_t>(max_frames_in_flight)
     };
-    commandBuffer = std::move(device->allocateCommandBuffersUnique(command_buffer_allocate_info).front());
+    commandBuffers = device->allocateCommandBuffersUnique(command_buffer_allocate_info);
 }
 

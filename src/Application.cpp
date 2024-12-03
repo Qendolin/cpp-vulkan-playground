@@ -1,13 +1,14 @@
 #include "Application.h"
 
 #include "GraphicsBackend.h"
+#include "Logger.h"
 #include "ShaderLoader.h"
 
 Application::Application() {
     backend = std::make_unique<GraphicsBackend>();
     backend->createSwapchain();
     backend->createRenderPass();
-    backend->createCommandBuffers();
+    backend->createCommandBuffers(frameResources.size());
 }
 
 Application::~Application() = default;
@@ -21,21 +22,43 @@ void Application::run() {
     auto frag_sh = loader->load("assets/test.frag");
     auto [pipeline_layout, pipeline] = loader->link(*backend->renderPass, {vert_sh, frag_sh}, {});
 
-
-    auto image_available_semaphore = device->createSemaphoreUnique(vk::SemaphoreCreateInfo{});
-    auto render_finished_semaphore = device->createSemaphoreUnique(vk::SemaphoreCreateInfo{});
-    auto in_flight_fence = device->createFenceUnique(vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled});
+    const auto create_semaphore = [device] { return device->createSemaphoreUnique(vk::SemaphoreCreateInfo{}); };
+    auto image_available_semaphore_pool = frameResources.create(create_semaphore);
+    auto render_finished_semaphore_pool = frameResources.create(create_semaphore);
+    const auto create_signaled_fence = [device] {
+        return device->createFenceUnique(vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled});
+    };
+    auto in_flight_fence_pool = frameResources.create(create_signaled_fence);
 
     while (!backend->window->shouldClose()) {
-        while (device->waitForFences({*in_flight_fence}, true, UINT64_MAX) == vk::Result::eTimeout) {
+        frameResources.advance();
+        auto in_flight_fence = in_flight_fence_pool.get();
+        while (device->waitForFences({in_flight_fence}, true, UINT64_MAX) == vk::Result::eTimeout) {
         }
-        device->resetFences({*in_flight_fence});
         glfwPollEvents();
 
-        auto image_index = device->acquireNextImageKHR(*backend->swapchain, UINT64_MAX, *image_available_semaphore,
-                                                       nullptr).value;
+        auto image_available_semaphore = image_available_semaphore_pool.get();
+        auto render_finished_semaphore = render_finished_semaphore_pool.get();
 
-        auto &command_buffer = *backend->commandBuffer;
+        uint32_t image_index = 0;
+        try {
+            auto image_acquistion_result = device->acquireNextImageKHR(*backend->swapchain, UINT64_MAX,
+                                                                       image_available_semaphore, nullptr);
+            if (image_acquistion_result.result == vk::Result::eSuboptimalKHR) {
+                Logger::warning("Swapchain may need recreation: VK_SUBOPTIMAL_KHR");
+            }
+            image_index = image_acquistion_result.value;
+        } catch (const vk::OutOfDateKHRError &) {
+            Logger::warning("Swapchain needs recreation: VK_ERROR_OUT_OF_DATE_KHR");
+            // TODO: https://vulkan-tutorial.com/Drawing_a_triangle/Swap_chain_recreation#page_Handling-resizes-explicitly
+            backend->recreateSwapchain();
+            continue;
+        }
+
+        // Reset fence once we are sure that we are submitting work
+        device->resetFences({in_flight_fence});
+
+        auto &command_buffer = *backend->commandBuffers.at(frameResources.frame());
         command_buffer.reset();
         command_buffer.begin(vk::CommandBufferBeginInfo{});
 
@@ -72,22 +95,32 @@ void Application::run() {
         command_buffer.endRenderPass();
         command_buffer.end();
 
-        vk::PipelineStageFlags const pipe_stage_flags = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+        vk::PipelineStageFlags constexpr pipe_stage_flags = vk::PipelineStageFlagBits::eColorAttachmentOutput;
         vk::SubmitInfo submit_info = vk::SubmitInfo()
                 .setCommandBuffers(command_buffer)
-                .setWaitSemaphores(*image_available_semaphore)
+                .setWaitSemaphores(image_available_semaphore)
                 .setWaitDstStageMask(pipe_stage_flags)
-                .setSignalSemaphores(*render_finished_semaphore);
-        backend->graphicsQueue.submit({submit_info}, *in_flight_fence);
+                .setSignalSemaphores(render_finished_semaphore);
+        backend->graphicsQueue.submit({submit_info}, in_flight_fence);
 
         vk::PresentInfoKHR present_info = vk::PresentInfoKHR()
-                .setWaitSemaphores(*render_finished_semaphore)
+                .setWaitSemaphores(render_finished_semaphore)
                 .setSwapchains(*backend->swapchain)
                 .setImageIndices(image_index);
 
-        backend->graphicsQueue.presentKHR(present_info);
+        try {
+            vk::Result result = backend->graphicsQueue.presentKHR(present_info);
+            if (result == vk::Result::eSuboptimalKHR) {
+                Logger::warning("Swapchain may need recreation: VK_SUBOPTIMAL_KHR");
+            }
+        } catch (const vk::OutOfDateKHRError &) {
+            Logger::warning("Swapchain needs recreation: VK_ERROR_OUT_OF_DATE_KHR");
+            backend->recreateSwapchain();
+            continue;
+        }
     }
 
+    Logger::info("Exited main loop");
     device->waitIdle();
 }
 

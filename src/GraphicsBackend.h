@@ -29,7 +29,7 @@ public:
     std::vector<vk::UniqueFramebuffer> framebuffers;
 
     vk::UniqueCommandPool commandPool;
-    vk::UniqueCommandBuffer commandBuffer;
+    std::vector<vk::UniqueCommandBuffer> commandBuffers;
 
     GraphicsBackend();
 
@@ -39,5 +39,7 @@ public:
 
     void createSwapchain();
 
-    void createCommandBuffers();
+    void recreateSwapchain();
+
+    void createCommandBuffers(int max_frames_in_flight);
 };
