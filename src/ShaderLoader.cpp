@@ -42,7 +42,11 @@ ShaderStageModule ShaderLoader::load(const std::string& shader_name) {
     return { stage, std::move(shader_module) };
 }
 
-std::pair<vk::UniquePipelineLayout, vk::UniquePipeline> ShaderLoader::link(vk::RenderPass& render_pass, std::initializer_list<std::reference_wrapper<ShaderStageModule>> stages, ShaderProgramConfig config) {
+std::pair<vk::UniquePipelineLayout, vk::UniquePipeline> ShaderLoader::link(
+    vk::RenderPass &render_pass, std::initializer_list<std::reference_wrapper<ShaderStageModule>> stages,
+    std::span<const vk::VertexInputBindingDescription> vertex_bindings,
+    std::span<const vk::VertexInputAttributeDescription> vertex_attributes,
+    ShaderProgramConfig config) {
     std::vector<vk::PipelineShaderStageCreateInfo> stage_create_infos;
     stage_create_infos.reserve(stages.size());
 
@@ -75,10 +79,10 @@ std::pair<vk::UniquePipelineLayout, vk::UniquePipeline> ShaderLoader::link(vk::R
     };
 
     vk::PipelineVertexInputStateCreateInfo vertex_input_state_create_info = {
-        .vertexBindingDescriptionCount = 0,
-        .pVertexBindingDescriptions = nullptr,
-        .vertexAttributeDescriptionCount = 0,
-        .pVertexAttributeDescriptions = nullptr
+        .vertexBindingDescriptionCount = static_cast<uint32_t>(vertex_bindings.size()),
+        .pVertexBindingDescriptions = vertex_bindings.data(),
+        .vertexAttributeDescriptionCount = static_cast<uint32_t>(vertex_attributes.size()),
+        .pVertexAttributeDescriptions = vertex_attributes.data()
     };
 
     vk::PipelineInputAssemblyStateCreateInfo assembly_state_create_info = {

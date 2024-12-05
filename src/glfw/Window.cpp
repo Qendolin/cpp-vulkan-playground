@@ -58,7 +58,7 @@ namespace glfw {
     vk::UniqueSurfaceKHR Window::createWindowSurfaceKHRUnique(vk::Instance instance) {
         VkSurfaceKHR surface_handle;
         VkResult result = glfwCreateWindowSurface(instance, handle, nullptr, &surface_handle);
-        vk::resultCheck(static_cast<vk::Result>(result), "glfwCreateWindowSurface");
+        vk::detail::resultCheck(static_cast<vk::Result>(result), "glfwCreateWindowSurface");
         return vk::UniqueSurfaceKHR(surface_handle, instance);
     }
 }

@@ -28,10 +28,16 @@ public:
     bool optimize = false;
     bool debug = false;
 
-    ShaderLoader(vk::SharedDevice device);
+    explicit ShaderLoader(vk::SharedDevice device);
     ~ShaderLoader();
 
     ShaderStageModule load(const std::string& shader_name);
 
-    std::pair<vk::UniquePipelineLayout, vk::UniquePipeline> link(vk::RenderPass& render_pass, std::initializer_list<std::reference_wrapper<ShaderStageModule>> stages, ShaderProgramConfig config);
+    // TODO: Maybe a builder makes more sense
+    std::pair<vk::UniquePipelineLayout, vk::UniquePipeline> link(
+        vk::RenderPass& render_pass,
+        std::initializer_list<std::reference_wrapper<ShaderStageModule>> stages,
+        std::span<const vk::VertexInputBindingDescription> vertex_bindings,
+        std::span<const vk::VertexInputAttributeDescription> vertex_attributes,
+        ShaderProgramConfig config = {});
 };
