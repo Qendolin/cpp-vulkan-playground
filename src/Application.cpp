@@ -3,7 +3,6 @@
 #include "GraphicsBackend.h"
 #include "Logger.h"
 #include "ShaderLoader.h"
-#include "Allocator.h"
 
 #include <glm/glm.hpp>
 
@@ -50,68 +49,6 @@ struct Vertex {
     }
 };
 
-template<std::ranges::contiguous_range R>
-static std::pair<vk::UniqueBuffer, vk::UniqueDeviceMemory> createBufferWithMemory(
-    const vk::PhysicalDevice physical_device, const vk::Device &device, R &&data, vk::BufferUsageFlags usage,
-    vk::MemoryPropertyFlags properties) {
-    using T = std::ranges::range_value_t<R>;
-    vk::UniqueBuffer buffer = device.createBufferUnique({
-        .size = data.size() * sizeof(T),
-        .usage = usage,
-        .sharingMode = vk::SharingMode::eExclusive,
-    });
-    vk::MemoryRequirements requirements = device.getBufferMemoryRequirements(*buffer);
-    vk::PhysicalDeviceMemoryProperties available_properties = physical_device.getMemoryProperties();
-
-    // select largest fitting memory
-    uint32_t memory_type_index = -1;
-    vk::DeviceSize memory_heap_size = 0;
-    for (uint32_t i = 0; i < available_properties.memoryTypeCount; i++) {
-        uint32_t bitmask = requirements.memoryTypeBits;
-        uint32_t bit = 1 << i;
-        if ((bitmask & bit) == 0) {
-            continue;
-        }
-
-        vk::MemoryType memory_type = available_properties.memoryTypes[i];
-        if ((memory_type.propertyFlags & properties) != properties) {
-            continue;
-        }
-
-        vk::DeviceSize heapSize = available_properties.memoryHeaps[memory_type.heapIndex].size;
-        if (heapSize > memory_heap_size) {
-            memory_type_index = i;
-            memory_heap_size = heapSize;
-        }
-    }
-
-    if (memory_type_index == -1) {
-        Logger::panic("No suitable memory type for buffer found");
-    }
-
-    vk::UniqueDeviceMemory memory = device.allocateMemoryUnique({
-        .allocationSize = requirements.size,
-        .memoryTypeIndex = memory_type_index
-    });
-
-    device.bindBufferMemory(*buffer, *memory, 0);
-
-    return std::pair(std::move(buffer), std::move(memory));
-}
-
-// template <std::ranges::contiguous_range R>
-// static vk::UniqueBuffer createBufferWithMemoryVma(R&& data, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties) {
-//     using T = std::ranges::range_value_t<R>;
-//     auto [buffer, alloc] = VulkanAllocator.createBuffer({
-//         .size = data.size() * sizeof(T),
-//         .usage = usage,
-//         .sharingMode = vk::SharingMode::eExclusive,
-//     }, {
-//         .usage = vma::MemoryUsage::eAutoPreferDevice,
-//         .requiredFlags = properties,
-//     });
-// }
-
 void Application::run() {
     auto &device = backend->device;
 
@@ -121,21 +58,26 @@ void Application::run() {
         {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
     };
 
-    auto [vbo, vbo_mem] = createBufferWithMemory(backend->phyicalDevice, *backend->device, vertices,
-                                                 vk::BufferUsageFlagBits::eVertexBuffer,
-                                                 vk::MemoryPropertyFlagBits::eHostVisible |
-                                                 vk::MemoryPropertyFlagBits::eHostCoherent); {
-        auto *vbo_mapped_mem = static_cast<Vertex *>(device->mapMemory(*vbo_mem, 0,
-                                                                       vertices.size() * sizeof(vertices[0])));
-        std::memcpy(vbo_mapped_mem, vertices.data(), vertices.size() * sizeof(vertices[0]));
-        device->unmapMemory(*vbo_mem);
-    }
+    auto [vbo, vbo_mem] = backend->allocator->createBufferUnique({
+                                                                     .size = vertices.size() * sizeof(vertices[0]),
+                                                                     .usage = vk::BufferUsageFlagBits::eVertexBuffer,
+                                                                     .sharingMode = vk::SharingMode::eExclusive,
+                                                                 }, {
+                                                                     .flags =
+                                                                     vma::AllocationCreateFlagBits::eHostAccessSequentialWrite,
+                                                                     .usage = vma::MemoryUsage::eAutoPreferDevice,
+                                                                     .requiredFlags =
+                                                                     vk::MemoryPropertyFlagBits::eHostVisible |
+                                                                     vk::MemoryPropertyFlagBits::eHostCoherent,
+                                                                 });
+    backend->allocator->copyMemoryToAllocation(vertices.data(), *vbo_mem, 0, vertices.size() * sizeof(vertices[0]));
 
     loader = std::make_unique<ShaderLoader>(backend->device);
     auto vert_sh = loader->load("assets/test.vert");
     auto frag_sh = loader->load("assets/test.frag");
     auto [pipeline_layout, pipeline] =
-        loader->link(*backend->renderPass, {vert_sh, frag_sh}, Vertex::bindingDescriptors(), Vertex::attributeDescriptors(), {});
+            loader->link(*backend->renderPass, {vert_sh, frag_sh}, Vertex::bindingDescriptors(),
+                         Vertex::attributeDescriptors(), {});
 
     const auto create_semaphore = [device] { return device->createSemaphoreUnique(vk::SemaphoreCreateInfo{}); };
     auto image_available_semaphore_pool = frameResources.create(create_semaphore);

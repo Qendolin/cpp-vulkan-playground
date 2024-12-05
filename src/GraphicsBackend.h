@@ -6,6 +6,10 @@
 #include "glfw/Context.h"
 #include "glfw/Window.h"
 
+#define VMA_STATIC_VULKAN_FUNCTIONS 0
+#define VMA_DYNAMIC_VULKAN_FUNCTIONS 1
+#include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
+
 class GraphicsBackend {
 public:
     std::unique_ptr<glfw::Context> glfw;
@@ -30,6 +34,8 @@ public:
 
     vk::UniqueCommandPool commandPool;
     std::vector<vk::UniqueCommandBuffer> commandBuffers;
+
+    vma::UniqueAllocator allocator;
 
     GraphicsBackend();
 

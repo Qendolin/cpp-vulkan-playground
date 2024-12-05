@@ -1,3 +1,5 @@
+#define VMA_IMPLEMENTATION
+
 #include "GraphicsBackend.h"
 
 #include "Logger.h"
@@ -75,7 +77,7 @@ GraphicsBackend::GraphicsBackend() {
 
     surface = window->createWindowSurfaceKHRUnique(*instance);
 
-    std::array required_device_extensions = {vk::KHRSwapchainExtensionName};
+    std::array required_device_extensions = {vk::KHRSwapchainExtensionName, vk::EXTMemoryBudgetExtensionName};
     for (auto device: instance->enumeratePhysicalDevices()) {
         auto device_properties = device.getProperties();
         if (device_properties.deviceType != vk::PhysicalDeviceType::eDiscreteGpu) continue;
@@ -140,6 +142,19 @@ GraphicsBackend::GraphicsBackend() {
 
     device = vk::SharedDevice(phyicalDevice.createDevice(device_create_info));
     graphicsQueue = device->getQueue(graphicsQueueIndex, 0);
+
+    vma::VulkanFunctions vma_vulkan_functions = {
+        .vkGetInstanceProcAddr = VULKAN_HPP_DEFAULT_DISPATCHER.vkGetInstanceProcAddr,
+        .vkGetDeviceProcAddr = VULKAN_HPP_DEFAULT_DISPATCHER.vkGetDeviceProcAddr
+    };
+    allocator = vma::createAllocatorUnique({
+        .flags = vma::AllocatorCreateFlagBits::eExtMemoryBudget,
+        .physicalDevice = phyicalDevice,
+        .device = *device,
+        .pVulkanFunctions = &vma_vulkan_functions,
+        .instance = *instance,
+        .vulkanApiVersion = application_info.apiVersion,
+    });
 }
 
 GraphicsBackend::~GraphicsBackend() = default;
