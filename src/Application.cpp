@@ -53,9 +53,13 @@ void Application::run() {
     auto &device = backend->device;
 
     const std::vector<Vertex> vertices = {
-        {{0.0f, -0.5f}, {1.0f, 1.0f, 1.0f}},
-        {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-        {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+        {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+        {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+        {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+        {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
+    };
+    const std::vector<uint16_t> indices = {
+        0, 1, 2, 2, 3, 0
     };
 
     vk::DeviceSize vbo_size = vertices.size() * sizeof(vertices[0]);
@@ -67,8 +71,18 @@ void Application::run() {
             .usage = vma::MemoryUsage::eAutoPreferDevice,
             .requiredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal,
         });
+    vk::DeviceSize ibo_size = indices.size() * sizeof(indices[0]);
+    auto [ibo, ibo_mem] = backend->allocator->createBufferUnique(
+        {
+            .size = ibo_size,
+            .usage = vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
+        }, {
+            .usage = vma::MemoryUsage::eAutoPreferDevice,
+            .requiredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal,
+        });
 
     backend->uploadWithStaging(vertices, *vbo);
+    backend->uploadWithStaging(indices, *ibo);
 
     loader = std::make_unique<ShaderLoader>(backend->device);
     auto vert_sh = loader->load("assets/test.vert");
@@ -148,8 +162,9 @@ void Application::run() {
                                     vk::StencilOp::eKeep, vk::CompareOp::eNever);
 
         command_buffer.bindVertexBuffers(0, {*vbo}, {0});
+        command_buffer.bindIndexBuffer(*ibo, 0, vk::IndexType::eUint16);
 
-        command_buffer.draw(3, 1, 0, 0);
+        command_buffer.drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
         command_buffer.endRenderPass();
         command_buffer.end();
 
