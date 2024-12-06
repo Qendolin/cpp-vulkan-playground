@@ -46,6 +46,7 @@ std::pair<vk::UniquePipelineLayout, vk::UniquePipeline> ShaderLoader::link(
     vk::RenderPass &render_pass, std::initializer_list<std::reference_wrapper<ShaderStageModule>> stages,
     std::span<const vk::VertexInputBindingDescription> vertex_bindings,
     std::span<const vk::VertexInputAttributeDescription> vertex_attributes,
+    std::span<const vk::DescriptorSetLayout> descriptor_set_layouts,
     ShaderProgramConfig config) {
     std::vector<vk::PipelineShaderStageCreateInfo> stage_create_infos;
     stage_create_infos.reserve(stages.size());
@@ -136,8 +137,8 @@ std::pair<vk::UniquePipelineLayout, vk::UniquePipeline> ShaderLoader::link(
     };
 
     vk::PipelineLayoutCreateInfo pipeline_layout_create_info = {
-        .setLayoutCount = 0,
-        .pSetLayouts = nullptr,
+        .setLayoutCount = static_cast<uint32_t>(descriptor_set_layouts.size()),
+        .pSetLayouts = descriptor_set_layouts.data(),
         .pushConstantRangeCount = 0,
         .pPushConstantRanges = nullptr
     };

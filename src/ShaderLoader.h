@@ -39,5 +39,6 @@ public:
         std::initializer_list<std::reference_wrapper<ShaderStageModule>> stages,
         std::span<const vk::VertexInputBindingDescription> vertex_bindings,
         std::span<const vk::VertexInputAttributeDescription> vertex_attributes,
+        std::span<const vk::DescriptorSetLayout> descriptor_set_layouts,
         ShaderProgramConfig config = {});
 };

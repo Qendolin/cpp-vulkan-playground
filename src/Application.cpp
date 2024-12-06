@@ -5,6 +5,7 @@
 #include "ShaderLoader.h"
 
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 Application::Application() {
     backend = std::make_unique<GraphicsBackend>();
@@ -49,6 +50,12 @@ struct Vertex {
     }
 };
 
+struct UniformBufferObject {
+    alignas(16) glm::mat4 model;
+    alignas(16) glm::mat4 view;
+    alignas(16) glm::mat4 proj;
+};
+
 void Application::run() {
     auto &device = backend->device;
 
@@ -84,12 +91,83 @@ void Application::run() {
     backend->uploadWithStaging(vertices, *vbo);
     backend->uploadWithStaging(indices, *ibo);
 
+    auto ubo_pool = frameResources.create([this] {
+        vma::AllocationInfo ubo_info = {};
+        auto [ubo, ubo_mem] = backend->allocator->createBufferUnique(
+        {
+            .size = sizeof(UniformBufferObject),
+            .usage = vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst,
+        }, {
+            .flags = vma::AllocationCreateFlagBits::eHostAccessSequentialWrite | vma::AllocationCreateFlagBits::eMapped,
+            .usage = vma::MemoryUsage::eAuto,
+            .requiredFlags = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+            .preferredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal,
+        }, &ubo_info);
+        struct Return {
+            vma::UniqueBuffer buffer;
+            vma::UniqueAllocation alloc;
+            UniformBufferObject* pointer{};
+        };
+        return Return {
+            std::move(ubo),
+            std::move(ubo_mem),
+            static_cast<UniformBufferObject*>(ubo_info.pMappedData)
+        };
+    });
+
+    vk::DescriptorSetLayoutBinding uniform_binding = {
+        .binding = 0,
+        .descriptorType = vk::DescriptorType::eUniformBuffer,
+        .descriptorCount = 1,
+        .stageFlags = vk::ShaderStageFlagBits::eVertex,
+    };
+    vk::UniqueDescriptorSetLayout uniform_layout = backend->device->createDescriptorSetLayoutUnique({
+        .bindingCount = 1,
+        .pBindings = &uniform_binding
+    });
+
+    vk::DescriptorPoolSize ubo_pool_size = {
+        .type = vk::DescriptorType::eUniformBuffer,
+        .descriptorCount = static_cast<uint32_t>(frameResources.size())
+    };
+    vk::UniqueDescriptorPool descriptor_pool = device->createDescriptorPoolUnique({
+        .maxSets = static_cast<uint32_t>(frameResources.size()),
+        .poolSizeCount = 1,
+        .pPoolSizes = &ubo_pool_size
+    });
+    std::vector layouts(frameResources.size(), *uniform_layout);
+    auto descriptor_set_pool = frameResources.create([&device, &descriptor_pool, &uniform_layout] {
+        // Not unique: cannot free
+        return device->allocateDescriptorSets({
+            .descriptorPool = *descriptor_pool,
+            .descriptorSetCount = 1,
+            .pSetLayouts = &*uniform_layout
+        })[0];
+    });
+
+    for (int i = 0; i < frameResources.size(); ++i) {
+        vk::DescriptorBufferInfo ubo_buffer_info = {
+            .buffer = *ubo_pool.get(i).buffer,
+            .offset = 0,
+            .range = sizeof(UniformBufferObject)
+        };
+        vk::WriteDescriptorSet descriptor_write = {
+            .dstSet = descriptor_set_pool.get(i),
+            .dstBinding = 0,
+            .descriptorCount = 1,
+            .descriptorType = vk::DescriptorType::eUniformBuffer,
+            .pBufferInfo = &ubo_buffer_info,
+        };
+        device->updateDescriptorSets(descriptor_write, nullptr);
+    }
+
     loader = std::make_unique<ShaderLoader>(backend->device);
     auto vert_sh = loader->load("assets/test.vert");
     auto frag_sh = loader->load("assets/test.frag");
-    auto [pipeline_layout, pipeline] =
-            loader->link(*backend->renderPass, {vert_sh, frag_sh}, Vertex::bindingDescriptors(),
-                         Vertex::attributeDescriptors(), {});
+    auto [pipeline_layout, pipeline] = loader->link(
+        *backend->renderPass, {vert_sh, frag_sh},
+        Vertex::bindingDescriptors(), Vertex::attributeDescriptors(),
+        std::array{*uniform_layout}, {});
 
     const auto create_semaphore = [device] { return device->createSemaphoreUnique(vk::SemaphoreCreateInfo{}); };
     auto image_available_semaphore_pool = frameResources.create(create_semaphore);
@@ -108,6 +186,14 @@ void Application::run() {
 
         auto image_available_semaphore = image_available_semaphore_pool.get();
         auto render_finished_semaphore = render_finished_semaphore_pool.get();
+
+        float time = glfwGetTime();
+        UniformBufferObject ubo_curr = {
+            .model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
+            .view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
+            .proj = glm::perspective(glm::radians(45.0f), 1.0f / 1.0f, 0.1f, 10.0f)
+        };
+        std::memcpy(ubo_pool.get().pointer, &ubo_curr, sizeof(ubo_curr));
 
         uint32_t image_index = 0;
         try {
@@ -146,10 +232,13 @@ void Application::run() {
 
         command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
 
+        // https://www.saschawillems.de/blog/2019/03/29/flipping-the-vulkan-viewport/
         command_buffer.setViewport(0, {
                                        {
-                                           0.0f, 0.0f, static_cast<float>(backend->surfaceExtents.width),
-                                           static_cast<float>(backend->surfaceExtents.height), 0.0f, 1.0f
+                                           0.0f, static_cast<float>(backend->surfaceExtents.height),
+                                           static_cast<float>(backend->surfaceExtents.width),
+                                           -static_cast<float>(backend->surfaceExtents.height),
+                                           0.0f, 1.0f
                                        }
                                    });
         command_buffer.setScissor(0, {{{}, backend->surfaceExtents}});
@@ -163,6 +252,7 @@ void Application::run() {
 
         command_buffer.bindVertexBuffers(0, {*vbo}, {0});
         command_buffer.bindIndexBuffer(*ibo, 0, vk::IndexType::eUint16);
+        command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipeline_layout, 0, descriptor_set_pool.get(), {});
 
         command_buffer.drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
         command_buffer.endRenderPass();

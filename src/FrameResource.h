@@ -11,28 +11,34 @@ concept PointerType = std::is_pointer_v<T> || requires(T t)
 {
     { *t }; // Dereferenceable
     { t.get() }; // Has a get() method like smart pointers
-    { static_cast<bool>(t) }; // Must be convertible to bool
 };
 
-template<PointerType T, typename Supplier, size_t Size>
+template<typename T, size_t Size>
 class FrameResource {
     const FrameResourceManager<Size> *manager;
-    std::array<T, Size> pool = {};
-    Supplier supplier;
+    const std::array<T, Size> pool = {};
 
 public:
-    FrameResource(const FrameResourceManager<Size> *manager, Supplier supplier)
-        : manager(manager), supplier(supplier) {
+    FrameResource(const FrameResourceManager<Size> *manager, std::array<T, Size>&& pool) : manager(manager), pool(std::move(pool)) {
     }
 
     ~FrameResource() = default;
 
-    auto get() {
+    auto& get() {
         int frame = manager->frame();
-        if (!pool[frame]) {
-            pool[frame] = supplier();
+        if constexpr (PointerType<T>) {
+            return pool[frame].get();
+        } else {
+            return pool[frame];
         }
-        return pool[frame].get();
+    }
+
+    auto& get(int i) {
+        if constexpr (PointerType<T>) {
+            return pool[i % Size].get();
+        } else {
+            return pool[i % Size];
+        }
     }
 };
 
@@ -60,8 +66,12 @@ public:
     }
 
     template<typename Supplier>
-    auto create(Supplier &&supplier) requires PointerType<std::invoke_result_t<Supplier> > {
+    auto create(Supplier &&supplier) {
         using T = std::invoke_result_t<Supplier>;
-        return FrameResource<T, Supplier, Size>(this, std::forward<Supplier &&>(supplier));
+        std::array<T, Size> pool = {};
+        for (int i = 0; i < Size; ++i) {
+            pool[i] = supplier();
+        }
+        return FrameResource<T, Size>(this, std::move(pool));
     }
 };
