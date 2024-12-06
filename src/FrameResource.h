@@ -19,12 +19,13 @@ class FrameResource {
     const std::array<T, Size> pool = {};
 
 public:
-    FrameResource(const FrameResourceManager<Size> *manager, std::array<T, Size>&& pool) : manager(manager), pool(std::move(pool)) {
+    FrameResource(const FrameResourceManager<Size> *manager, std::array<T, Size> &&pool) : manager(manager),
+        pool(std::move(pool)) {
     }
 
     ~FrameResource() = default;
 
-    auto& get() {
+    auto &get() {
         int frame = manager->frame();
         if constexpr (PointerType<T>) {
             return pool[frame].get();
@@ -33,7 +34,7 @@ public:
         }
     }
 
-    auto& get(int i) {
+    auto &get(int i) {
         if constexpr (PointerType<T>) {
             return pool[i % Size].get();
         } else {

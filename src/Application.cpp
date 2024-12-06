@@ -94,24 +94,25 @@ void Application::run() {
     auto ubo_pool = frameResources.create([this] {
         vma::AllocationInfo ubo_info = {};
         auto [ubo, ubo_mem] = backend->allocator->createBufferUnique(
-        {
-            .size = sizeof(UniformBufferObject),
-            .usage = vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst,
-        }, {
-            .flags = vma::AllocationCreateFlagBits::eHostAccessSequentialWrite | vma::AllocationCreateFlagBits::eMapped,
-            .usage = vma::MemoryUsage::eAuto,
-            .requiredFlags = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-            .preferredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal,
-        }, &ubo_info);
+            {
+                .size = sizeof(UniformBufferObject),
+                .usage = vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst,
+            }, {
+                .flags = vma::AllocationCreateFlagBits::eHostAccessSequentialWrite |
+                         vma::AllocationCreateFlagBits::eMapped,
+                .usage = vma::MemoryUsage::eAuto,
+                .requiredFlags = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+                .preferredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal,
+            }, &ubo_info);
         struct Return {
             vma::UniqueBuffer buffer;
             vma::UniqueAllocation alloc;
-            UniformBufferObject* pointer{};
+            UniformBufferObject *pointer{};
         };
-        return Return {
+        return Return{
             std::move(ubo),
             std::move(ubo_mem),
-            static_cast<UniformBufferObject*>(ubo_info.pMappedData)
+            static_cast<UniformBufferObject *>(ubo_info.pMappedData)
         };
     });
 
