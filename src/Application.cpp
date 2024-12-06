@@ -58,19 +58,17 @@ void Application::run() {
         {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
     };
 
-    auto [vbo, vbo_mem] = backend->allocator->createBufferUnique({
-                                                                     .size = vertices.size() * sizeof(vertices[0]),
-                                                                     .usage = vk::BufferUsageFlagBits::eVertexBuffer,
-                                                                     .sharingMode = vk::SharingMode::eExclusive,
-                                                                 }, {
-                                                                     .flags =
-                                                                     vma::AllocationCreateFlagBits::eHostAccessSequentialWrite,
-                                                                     .usage = vma::MemoryUsage::eAutoPreferDevice,
-                                                                     .requiredFlags =
-                                                                     vk::MemoryPropertyFlagBits::eHostVisible |
-                                                                     vk::MemoryPropertyFlagBits::eHostCoherent,
-                                                                 });
-    backend->allocator->copyMemoryToAllocation(vertices.data(), *vbo_mem, 0, vertices.size() * sizeof(vertices[0]));
+    vk::DeviceSize vbo_size = vertices.size() * sizeof(vertices[0]);
+    auto [vbo, vbo_mem] = backend->allocator->createBufferUnique(
+        {
+            .size = vbo_size,
+            .usage = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
+        }, {
+            .usage = vma::MemoryUsage::eAutoPreferDevice,
+            .requiredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal,
+        });
+
+    backend->uploadWithStaging(vertices, *vbo);
 
     loader = std::make_unique<ShaderLoader>(backend->device);
     auto vert_sh = loader->load("assets/test.vert");
@@ -183,5 +181,3 @@ void Application::run() {
     Logger::info("Exited main loop");
     device->waitIdle();
 }
-
-

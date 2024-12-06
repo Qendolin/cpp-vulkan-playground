@@ -155,6 +155,21 @@ GraphicsBackend::GraphicsBackend() {
         .instance = *instance,
         .vulkanApiVersion = application_info.apiVersion,
     });
+
+    stagingMappedMemorySize = 64000000; // 64 MB
+    vma::AllocationInfo staging_info = {};
+    auto [staging, staging_mem] = allocator->createBufferUnique(
+        {
+            .size = stagingMappedMemorySize,
+            .usage = vk::BufferUsageFlagBits::eTransferSrc,
+        }, {
+            .flags = vma::AllocationCreateFlagBits::eHostAccessSequentialWrite | vma::AllocationCreateFlagBits::eMapped,
+            .usage = vma::MemoryUsage::eAuto,
+            .requiredFlags = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
+        }, &staging_info);
+    this->stagingBuffer = std::move(staging);
+    this->stagingAllocation = std::move(staging_mem);
+    this->stagingMappedMemory = staging_info.pMappedData;
 }
 
 GraphicsBackend::~GraphicsBackend() = default;
@@ -319,3 +334,27 @@ void GraphicsBackend::createCommandBuffers(int max_frames_in_flight) {
     commandBuffers = device->allocateCommandBuffersUnique(command_buffer_allocate_info);
 }
 
+void GraphicsBackend::submitImmediate(std::function<void(vk::CommandBuffer cmd_buf)>&& func) {
+    vk::UniqueCommandBuffer cmd_buf = std::move(
+        device->allocateCommandBuffersUnique({
+            .commandPool = *commandPool,
+            .level = vk::CommandBufferLevel::ePrimary,
+            .commandBufferCount = 1,
+        }).front());
+
+    cmd_buf->begin({
+        .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit
+    });
+
+    func(*cmd_buf);
+
+    vk::UniqueFence fence = device->createFenceUnique({});
+
+    cmd_buf->end();
+    graphicsQueue.submit(vk::SubmitInfo{
+        .commandBufferCount = 1,
+        .pCommandBuffers = &*cmd_buf
+    }, *fence);
+    while (device->waitForFences(*fence, true, UINT64_MAX) == vk::Result::eTimeout) {}
+    device->resetFences(*fence);
+}

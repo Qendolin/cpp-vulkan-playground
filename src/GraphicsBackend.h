@@ -8,6 +8,7 @@
 
 #define VMA_STATIC_VULKAN_FUNCTIONS 0
 #define VMA_DYNAMIC_VULKAN_FUNCTIONS 1
+#include <functional>
 #include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
 
 class GraphicsBackend {
@@ -37,6 +38,13 @@ public:
 
     vma::UniqueAllocator allocator;
 
+private:
+    vma::UniqueBuffer stagingBuffer;
+    vma::UniqueAllocation stagingAllocation;
+    void* stagingMappedMemory;
+    vk::DeviceSize stagingMappedMemorySize;
+
+public:
     GraphicsBackend();
 
     ~GraphicsBackend();
@@ -48,4 +56,28 @@ public:
     void recreateSwapchain();
 
     void createCommandBuffers(int max_frames_in_flight);
+
+    void submitImmediate(std::function<void(vk::CommandBuffer cmd_buf)>&& func);
+
+    template<std::ranges::contiguous_range R>
+    void uploadWithStaging(R&& data, vk::Buffer& dst) {
+        using T = std::ranges::range_value_t<R>;
+
+        vk::DeviceSize size = data.size() * sizeof(T);
+
+        vk::DeviceSize offset = 0;
+        vk::DeviceSize left = size;
+
+        while (left > 0) {
+            vk::DeviceSize block_size = std::min(size, stagingMappedMemorySize);
+            std::memcpy(stagingMappedMemory, data.data() + offset, block_size);
+
+            submitImmediate([this, dst, size, offset] (const vk::CommandBuffer& cmd_buf) {
+                cmd_buf.copyBuffer(*stagingBuffer, dst, vk::BufferCopy{.dstOffset = offset, .size = size});
+            });
+
+            left -= std::min(left, block_size);
+        }
+    }
+
 };
