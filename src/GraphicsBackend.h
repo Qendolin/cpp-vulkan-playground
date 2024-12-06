@@ -41,7 +41,7 @@ public:
 private:
     vma::UniqueBuffer stagingBuffer;
     vma::UniqueAllocation stagingAllocation;
-    void* stagingMappedMemory;
+    void *stagingMappedMemory;
     vk::DeviceSize stagingMappedMemorySize;
 
 public:
@@ -57,10 +57,10 @@ public:
 
     void createCommandBuffers(int max_frames_in_flight);
 
-    void submitImmediate(std::function<void(vk::CommandBuffer cmd_buf)>&& func);
+    void submitImmediate(std::function<void(vk::CommandBuffer cmd_buf)> &&func);
 
     template<std::ranges::contiguous_range R>
-    void uploadWithStaging(R&& data, vk::Buffer& dst) {
+    void uploadWithStaging(R &&data, vk::Buffer &dst) {
         using T = std::ranges::range_value_t<R>;
 
         vk::DeviceSize size = data.size() * sizeof(T);
@@ -72,12 +72,11 @@ public:
             vk::DeviceSize block_size = std::min(size, stagingMappedMemorySize);
             std::memcpy(stagingMappedMemory, data.data() + offset, block_size);
 
-            submitImmediate([this, dst, size, offset] (const vk::CommandBuffer& cmd_buf) {
+            submitImmediate([this, dst, size, offset](const vk::CommandBuffer &cmd_buf) {
                 cmd_buf.copyBuffer(*stagingBuffer, dst, vk::BufferCopy{.dstOffset = offset, .size = size});
             });
 
             left -= std::min(left, block_size);
         }
     }
-
 };

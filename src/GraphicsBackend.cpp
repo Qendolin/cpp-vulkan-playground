@@ -334,7 +334,7 @@ void GraphicsBackend::createCommandBuffers(int max_frames_in_flight) {
     commandBuffers = device->allocateCommandBuffersUnique(command_buffer_allocate_info);
 }
 
-void GraphicsBackend::submitImmediate(std::function<void(vk::CommandBuffer cmd_buf)>&& func) {
+void GraphicsBackend::submitImmediate(std::function<void(vk::CommandBuffer cmd_buf)> &&func) {
     vk::UniqueCommandBuffer cmd_buf = std::move(
         device->allocateCommandBuffersUnique({
             .commandPool = *commandPool,
@@ -352,9 +352,10 @@ void GraphicsBackend::submitImmediate(std::function<void(vk::CommandBuffer cmd_b
 
     cmd_buf->end();
     graphicsQueue.submit(vk::SubmitInfo{
-        .commandBufferCount = 1,
-        .pCommandBuffers = &*cmd_buf
-    }, *fence);
-    while (device->waitForFences(*fence, true, UINT64_MAX) == vk::Result::eTimeout) {}
+                             .commandBufferCount = 1,
+                             .pCommandBuffers = &*cmd_buf
+                         }, *fence);
+    while (device->waitForFences(*fence, true, UINT64_MAX) == vk::Result::eTimeout) {
+    }
     device->resetFences(*fence);
 }
