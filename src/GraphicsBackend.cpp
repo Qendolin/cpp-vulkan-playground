@@ -28,7 +28,7 @@ GraphicsBackend::GraphicsBackend() {
         .width = 800,
         .height = 800,
         .title = "Vulkan window",
-        .resizable = false,
+        .resizable = true,
         .clientApi = glfw::ClientApi::None
     });
 
