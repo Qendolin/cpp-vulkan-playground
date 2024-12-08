@@ -96,7 +96,7 @@ GraphicsBackend::GraphicsBackend() {
         if (missing_required_extension) continue;
 
         vk::PhysicalDeviceFeatures features = device.getFeatures();
-        if(!features.samplerAnisotropy) continue;
+        if (!features.samplerAnisotropy) continue;
 
         uint32_t queue_index = -1;
         for (auto queue_family_properties: device.getQueueFamilyProperties()) {

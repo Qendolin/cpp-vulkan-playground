@@ -39,6 +39,7 @@ public:
     vma::UniqueAllocator allocator;
 
     vma::UniqueBuffer stagingBuffer;
+
 private:
     vma::UniqueAllocation stagingAllocation;
     void *stagingMappedMemory;
@@ -63,7 +64,7 @@ public:
     void copyToStaging(R &&data) {
         using T = std::ranges::range_value_t<R>;
         vk::DeviceSize size = data.size() * sizeof(T);
-        if(size > stagingMappedMemorySize) {
+        if (size > stagingMappedMemorySize) {
             throw std::exception("buffer to big for staging");
         }
         std::memcpy(stagingMappedMemory, data.data(), size);

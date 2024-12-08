@@ -66,8 +66,9 @@ struct UniformBufferObject {
     alignas(16) glm::mat4 proj;
 };
 
-void transitionImageLayout(GraphicsBackend& backend, vk::Image& image, vk::Format format, uint32_t level_count, vk::ImageLayout oldLayout, vk::ImageLayout newLayout) {
-    backend.submitImmediate([&image, oldLayout, newLayout, level_count] (vk::CommandBuffer cmd_buf){
+void transitionImageLayout(GraphicsBackend &backend, vk::Image &image, vk::Format format, uint32_t level_count,
+                           vk::ImageLayout oldLayout, vk::ImageLayout newLayout) {
+    backend.submitImmediate([&image, oldLayout, newLayout, level_count](vk::CommandBuffer cmd_buf) {
         vk::ImageMemoryBarrier2 barrier = {
             .oldLayout = oldLayout,
             .newLayout = newLayout,
@@ -86,7 +87,8 @@ void transitionImageLayout(GraphicsBackend& backend, vk::Image& image, vk::Forma
             barrier.dstAccessMask = vk::AccessFlagBits2::eTransferWrite;
             barrier.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe;
             barrier.dstStageMask = vk::PipelineStageFlagBits2::eTransfer;
-        } else if (oldLayout == vk::ImageLayout::eTransferDstOptimal && newLayout == vk::ImageLayout::eShaderReadOnlyOptimal) {
+        } else if (oldLayout == vk::ImageLayout::eTransferDstOptimal && newLayout ==
+                   vk::ImageLayout::eShaderReadOnlyOptimal) {
             barrier.srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
             barrier.dstAccessMask = vk::AccessFlagBits2::eShaderRead;
             barrier.srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
@@ -103,25 +105,30 @@ void transitionImageLayout(GraphicsBackend& backend, vk::Image& image, vk::Forma
 }
 
 
-auto loadTexture(GraphicsBackend& backend, std::string_view filename) {
+auto loadTexture(GraphicsBackend &backend, std::string_view filename) {
     int tex_width, tex_height, tex_channels;
-    stbi_uc* pixels = stbi_load(filename.data(), &tex_width, &tex_height, &tex_channels, STBI_rgb_alpha);
+    stbi_uc *pixels = stbi_load(filename.data(), &tex_width, &tex_height, &tex_channels, STBI_rgb_alpha);
     uint32_t width = tex_width, height = tex_height;
-    backend.copyToStaging(std::span(pixels, width*height*4)); // stb converts to 4ch
+    backend.copyToStaging(std::span(pixels, width * height * 4)); // stb converts to 4ch
     stbi_image_free(pixels);
 
     auto [image, image_mem] = backend.allocator->createImageUnique({
-        .imageType = vk::ImageType::e2D,
-        .format = vk::Format::eR8G8B8A8Srgb,
-        .extent = {.width = width, .height = height, .depth = 1},
-        .mipLevels = 1,
-        .arrayLayers = 1,
-        .usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
-    }, {
-        .usage = vma::MemoryUsage::eAuto,
-        .requiredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal,
-    });
-    transitionImageLayout(backend, *image, vk::Format::eR8G8B8A8Srgb, 1, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
+                                                                       .imageType = vk::ImageType::e2D,
+                                                                       .format = vk::Format::eR8G8B8A8Srgb,
+                                                                       .extent = {
+                                                                           .width = width, .height = height, .depth = 1
+                                                                       },
+                                                                       .mipLevels = 1,
+                                                                       .arrayLayers = 1,
+                                                                       .usage = vk::ImageUsageFlagBits::eTransferDst |
+                                                                           vk::ImageUsageFlagBits::eSampled,
+                                                                   }, {
+                                                                       .usage = vma::MemoryUsage::eAuto,
+                                                                       .requiredFlags =
+                                                                       vk::MemoryPropertyFlagBits::eDeviceLocal,
+                                                                   });
+    transitionImageLayout(backend, *image, vk::Format::eR8G8B8A8Srgb, 1, vk::ImageLayout::eUndefined,
+                          vk::ImageLayout::eTransferDstOptimal);
     backend.submitImmediate([&backend, &image, width, height](vk::CommandBuffer cmd_buf) {
         vk::BufferImageCopy img_copy_region = {
             .imageSubresource = {
@@ -130,9 +137,11 @@ auto loadTexture(GraphicsBackend& backend, std::string_view filename) {
             },
             .imageExtent = {.width = width, .height = height, .depth = 1}
         };
-        cmd_buf.copyBufferToImage(*backend.stagingBuffer, *image, vk::ImageLayout::eTransferDstOptimal, img_copy_region);
+        cmd_buf.copyBufferToImage(*backend.stagingBuffer, *image, vk::ImageLayout::eTransferDstOptimal,
+                                  img_copy_region);
     });
-    transitionImageLayout(backend, *image, vk::Format::eR8G8B8A8Srgb, 1, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
+    transitionImageLayout(backend, *image, vk::Format::eR8G8B8A8Srgb, 1, vk::ImageLayout::eTransferDstOptimal,
+                          vk::ImageLayout::eShaderReadOnlyOptimal);
 
     vk::UniqueImageView image_view = backend.device->createImageViewUnique({
         .image = *image,
@@ -241,10 +250,12 @@ void Application::run() {
     std::initializer_list<vk::DescriptorPoolSize> ubo_pool_sizes = {{
         .type = vk::DescriptorType::eUniformBuffer,
         .descriptorCount = static_cast<uint32_t>(frameResources.size())
-    }, {
-        .type = vk::DescriptorType::eCombinedImageSampler,
-        .descriptorCount = static_cast<uint32_t>(frameResources.size())
-    }};
+        },
+        {
+            .type = vk::DescriptorType::eCombinedImageSampler,
+            .descriptorCount = static_cast<uint32_t>(frameResources.size())
+        }
+    };
 
     vk::UniqueDescriptorPool descriptor_pool = device->createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo{
         .maxSets = static_cast<uint32_t>(frameResources.size()),
