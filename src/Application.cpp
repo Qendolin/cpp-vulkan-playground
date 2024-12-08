@@ -367,7 +367,8 @@ void Application::run() {
 
         auto clear_vales = {
             vk::ClearValue{.color = {{{0.0f, 0.0f, 0.0f, 1.0f}}}},
-            vk::ClearValue{.depthStencil =  {1.0f, 0}}};
+            vk::ClearValue{.depthStencil = {1.0f, 0}}
+        };
         vk::RenderPassBeginInfo render_pass_begin_info = {
             .renderPass = *backend->renderPass,
             .framebuffer = *backend->framebuffers[image_index],

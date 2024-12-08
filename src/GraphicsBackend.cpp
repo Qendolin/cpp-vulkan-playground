@@ -179,22 +179,23 @@ GraphicsBackend::GraphicsBackend() {
 
 GraphicsBackend::~GraphicsBackend() = default;
 
-void GraphicsBackend::createRenderPass() {
-
-    {
+void GraphicsBackend::createRenderPass() { {
         auto [depth_image, depth_mem] = allocator->createImageUnique({
-            .imageType = vk::ImageType::e2D,
-            .format = vk::Format::eD32Sfloat,
-            .extent = {
-               .width = surfaceExtents.width, .height = surfaceExtents.height, .depth = 1
-            },
-            .mipLevels = 1,
-            .arrayLayers = 1,
-            .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment,
-        }, {
-            .usage = vma::MemoryUsage::eAutoPreferDevice,
-            .requiredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal,
-        });
+                                                                         .imageType = vk::ImageType::e2D,
+                                                                         .format = vk::Format::eD32Sfloat,
+                                                                         .extent = {
+                                                                             .width = surfaceExtents.width,
+                                                                             .height = surfaceExtents.height, .depth = 1
+                                                                         },
+                                                                         .mipLevels = 1,
+                                                                         .arrayLayers = 1,
+                                                                         .usage =
+                                                                         vk::ImageUsageFlagBits::eDepthStencilAttachment,
+                                                                     }, {
+                                                                         .usage = vma::MemoryUsage::eAutoPreferDevice,
+                                                                         .requiredFlags =
+                                                                         vk::MemoryPropertyFlagBits::eDeviceLocal,
+                                                                     });
         this->depthImage = std::move(depth_image);
         this->depthImageAllocation = std::move(depth_mem);
     }
