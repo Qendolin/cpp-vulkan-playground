@@ -63,14 +63,14 @@ struct Vertex {
     }
 };
 
-struct UniformBufferObject {
+struct Uniforms {
     alignas(16) glm::mat4 model;
     alignas(16) glm::mat4 view;
     alignas(16) glm::mat4 proj;
 };
 
-void transitionImageLayout(GraphicsBackend &backend, vk::Image &image, vk::Format format, uint32_t level_count,
-                           vk::ImageLayout oldLayout, vk::ImageLayout newLayout) {
+void transitionImageLayout(GraphicsBackend &backend, vk::Image &image, vk::Format format, uint32_t level_count, vk::ImageLayout oldLayout,
+                           vk::ImageLayout newLayout) {
     backend.submitImmediate([&image, oldLayout, newLayout, level_count](vk::CommandBuffer cmd_buf) {
         vk::ImageMemoryBarrier2 barrier = {
             .oldLayout = oldLayout,
@@ -90,8 +90,7 @@ void transitionImageLayout(GraphicsBackend &backend, vk::Image &image, vk::Forma
             barrier.dstAccessMask = vk::AccessFlagBits2::eTransferWrite;
             barrier.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe;
             barrier.dstStageMask = vk::PipelineStageFlagBits2::eTransfer;
-        } else if (oldLayout == vk::ImageLayout::eTransferDstOptimal && newLayout ==
-                   vk::ImageLayout::eShaderReadOnlyOptimal) {
+        } else if (oldLayout == vk::ImageLayout::eTransferDstOptimal && newLayout == vk::ImageLayout::eShaderReadOnlyOptimal) {
             barrier.srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
             barrier.dstAccessMask = vk::AccessFlagBits2::eShaderRead;
             barrier.srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
@@ -139,11 +138,9 @@ auto loadTexture(GraphicsBackend &backend, std::string_view filename) {
             },
             .imageExtent = {.width = width, .height = height, .depth = 1}
         };
-        cmd_buf.copyBufferToImage(*backend.stagingBuffer, *image, vk::ImageLayout::eTransferDstOptimal,
-                                  img_copy_region);
+        cmd_buf.copyBufferToImage(*backend.stagingBuffer, *image, vk::ImageLayout::eTransferDstOptimal, img_copy_region);
     });
-    transitionImageLayout(backend, *image, vk::Format::eR8G8B8A8Srgb, 1, vk::ImageLayout::eTransferDstOptimal,
-                          vk::ImageLayout::eShaderReadOnlyOptimal);
+    transitionImageLayout(backend, *image, vk::Format::eR8G8B8A8Srgb, 1, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
 
     vk::UniqueImageView image_view = backend.device->createImageViewUnique({
         .image = *image,
@@ -210,33 +207,33 @@ void Application::run() {
         }
     }
 
-    vk::DeviceSize vbo_size = vertices.size() * sizeof(vertices[0]);
-    auto [vbo, vbo_mem] = backend->allocator->createBufferUnique(
+    vk::DeviceSize vb_size = vertices.size() * sizeof(vertices[0]);
+    auto [vertex_buf, vb_alloc] = backend->allocator->createBufferUnique(
         {
-            .size = vbo_size,
+            .size = vb_size,
             .usage = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
         }, {
             .usage = vma::MemoryUsage::eAutoPreferDevice,
             .requiredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal,
         });
-    vk::DeviceSize ibo_size = indices.size() * sizeof(indices[0]);
-    auto [ibo, ibo_mem] = backend->allocator->createBufferUnique(
+    vk::DeviceSize ib_size = indices.size() * sizeof(indices[0]);
+    auto [index_buf, ib_alloc] = backend->allocator->createBufferUnique(
         {
-            .size = ibo_size,
+            .size = ib_size,
             .usage = vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
         }, {
             .usage = vma::MemoryUsage::eAutoPreferDevice,
             .requiredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal,
         });
 
-    backend->uploadWithStaging(vertices, *vbo);
-    backend->uploadWithStaging(indices, *ibo);
+    backend->uploadWithStaging(vertices, *vertex_buf);
+    backend->uploadWithStaging(indices, *index_buf);
 
-    auto ubo_pool = frameResources.create([this] {
-        vma::AllocationInfo ubo_info = {};
-        auto [ubo, ubo_mem] = backend->allocator->createBufferUnique(
+    auto uniform_buffers = frameResources.create([this] {
+        vma::AllocationInfo ub_alloc_info = {};
+        auto [uniform_buffer, ub_alloc] = backend->allocator->createBufferUnique(
             {
-                .size = sizeof(UniformBufferObject),
+                .size = sizeof(Uniforms),
                 .usage = vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst,
             }, {
                 .flags = vma::AllocationCreateFlagBits::eHostAccessSequentialWrite |
@@ -244,16 +241,16 @@ void Application::run() {
                 .usage = vma::MemoryUsage::eAuto,
                 .requiredFlags = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
                 .preferredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal,
-            }, &ubo_info);
+            }, &ub_alloc_info);
         struct Return {
             vma::UniqueBuffer buffer;
             vma::UniqueAllocation alloc;
-            UniformBufferObject *pointer{};
+            Uniforms *pointer{};
         };
         return Return{
-            std::move(ubo),
-            std::move(ubo_mem),
-            static_cast<UniformBufferObject *>(ubo_info.pMappedData)
+            std::move(uniform_buffer),
+            std::move(ub_alloc),
+            static_cast<Uniforms *>(ub_alloc_info.pMappedData)
         };
     });
 
@@ -275,7 +272,7 @@ void Application::run() {
         vk::DescriptorSetLayoutCreateInfo().setBindings(bindings)
     );
 
-    std::initializer_list<vk::DescriptorPoolSize> ubo_pool_sizes = {
+    std::initializer_list<vk::DescriptorPoolSize> uniform_pool_sizes = {
         {
             .type = vk::DescriptorType::eUniformBuffer,
             .descriptorCount = static_cast<uint32_t>(frameResources.size())
@@ -288,9 +285,9 @@ void Application::run() {
 
     vk::UniqueDescriptorPool descriptor_pool = device->createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo{
         .maxSets = static_cast<uint32_t>(frameResources.size()),
-    }.setPoolSizes(ubo_pool_sizes));
+    }.setPoolSizes(uniform_pool_sizes));
     std::vector layouts(frameResources.size(), *uniform_layout);
-    auto descriptor_set_pool = frameResources.create([&device, &descriptor_pool, &uniform_layout] {
+    auto descriptor_sets = frameResources.create([&device, &descriptor_pool, &uniform_layout] {
         // Not unique: cannot free
         return device->allocateDescriptorSets({
             .descriptorPool = *descriptor_pool,
@@ -300,10 +297,10 @@ void Application::run() {
     });
 
     for (int i = 0; i < frameResources.size(); ++i) {
-        vk::DescriptorBufferInfo ubo_buffer_info = {
-            .buffer = *ubo_pool.get(i).buffer,
+        vk::DescriptorBufferInfo uniform_buffer_info = {
+            .buffer = *uniform_buffers.get(i).buffer,
             .offset = 0,
-            .range = sizeof(UniformBufferObject)
+            .range = sizeof(Uniforms)
         };
         vk::DescriptorImageInfo image_sampler_info = {
             .sampler = *sampler,
@@ -312,14 +309,14 @@ void Application::run() {
         };
         auto descriptor_write = {
             vk::WriteDescriptorSet{
-                .dstSet = descriptor_set_pool.get(i),
+                .dstSet = descriptor_sets.get(i),
                 .dstBinding = 0,
                 .descriptorCount = 1,
                 .descriptorType = vk::DescriptorType::eUniformBuffer,
-                .pBufferInfo = &ubo_buffer_info,
+                .pBufferInfo = &uniform_buffer_info,
             },
             vk::WriteDescriptorSet{
-                .dstSet = descriptor_set_pool.get(i),
+                .dstSet = descriptor_sets.get(i),
                 .dstBinding = 1,
                 .descriptorCount = 1,
                 .descriptorType = vk::DescriptorType::eCombinedImageSampler,
@@ -341,36 +338,34 @@ void Application::run() {
         std::array{*uniform_layout}, {});
 
     const auto create_semaphore = [device] { return device->createSemaphoreUnique(vk::SemaphoreCreateInfo{}); };
-    auto image_available_semaphore_pool = frameResources.create(create_semaphore);
-    auto render_finished_semaphore_pool = frameResources.create(create_semaphore);
+    auto image_available_semaphores = frameResources.create(create_semaphore);
+    auto render_finished_semaphores = frameResources.create(create_semaphore);
     const auto create_signaled_fence = [device] {
         return device->createFenceUnique(vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled});
     };
-    auto in_flight_fence_pool = frameResources.create(create_signaled_fence);
+    auto in_flight_fences = frameResources.create(create_signaled_fence);
 
     glfwSetFramebufferSizeCallback(*backend->window, framebufferResizeCallback);
 
     while (!backend->window->shouldClose()) {
         frameResources.advance();
-        auto in_flight_fence = in_flight_fence_pool.get();
+        auto in_flight_fence = in_flight_fences.get();
         while (device->waitForFences({in_flight_fence}, true, UINT64_MAX) == vk::Result::eTimeout) {
         }
         glfwPollEvents();
 
-        auto image_available_semaphore = image_available_semaphore_pool.get();
-        auto render_finished_semaphore = render_finished_semaphore_pool.get();
+        auto image_available_semaphore = image_available_semaphores.get();
+        auto render_finished_semaphore = render_finished_semaphores.get();
 
-        float time = glfwGetTime();
-        UniformBufferObject ubo_curr = {
+        float time = static_cast<float>(glfwGetTime());
+        float aspect_ratio = static_cast<float>(backend->surfaceExtents.width) / static_cast<float>(backend->surfaceExtents.height);
+        Uniforms uniforms = {
             .model = glm::rotate(glm::mat4(1.0f), time * glm::radians(30.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
             .view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
-            .proj = glm::perspective(glm::radians(45.0f),
-                                     static_cast<float>(backend->surfaceExtents.width) / static_cast<float>(backend->
-                                         surfaceExtents.height)
-                                     / 1.0f, 0.1f, 10.0f)
+            .proj = glm::perspective(glm::radians(45.0f), aspect_ratio, 0.1f, 10.0f)
         };
 
-        std::memcpy(ubo_pool.get().pointer, &ubo_curr, sizeof(ubo_curr));
+        std::memcpy(uniform_buffers.get().pointer, &uniforms, sizeof(uniforms));
 
         uint32_t image_index = 0;
         bool recreate_swapchain = false;
@@ -435,10 +430,10 @@ void Application::run() {
         command_buffer.setStencilOp(vk::StencilFaceFlagBits::eFrontAndBack, vk::StencilOp::eKeep, vk::StencilOp::eKeep,
                                     vk::StencilOp::eKeep, vk::CompareOp::eNever);
 
-        command_buffer.bindVertexBuffers(0, {*vbo}, {0});
-        command_buffer.bindIndexBuffer(*ibo, 0, vk::IndexType::eUint32);
+        command_buffer.bindVertexBuffers(0, {*vertex_buf}, {0});
+        command_buffer.bindIndexBuffer(*index_buf, 0, vk::IndexType::eUint32);
         command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipeline_layout, 0,
-                                          descriptor_set_pool.get(), {});
+                                          descriptor_sets.get(), {});
 
         command_buffer.drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
         command_buffer.endRenderPass();

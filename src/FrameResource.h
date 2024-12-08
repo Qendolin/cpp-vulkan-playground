@@ -20,7 +20,7 @@ class FrameResource {
 
 public:
     FrameResource(const FrameResourceManager<Size> *manager, std::array<T, Size> &&pool) : manager(manager),
-        pool(std::move(pool)) {
+                                                                                           pool(std::move(pool)) {
     }
 
     ~FrameResource() = default;
@@ -60,7 +60,6 @@ public:
     void advance() {
         current = (current + 1) % Size;
     }
-
 
     [[nodiscard]] int size() const {
         return Size;

@@ -24,20 +24,22 @@ struct ShaderProgramConfig {
 class ShaderLoader {
     vk::SharedDevice device;
     std::shared_ptr<ShaderCompiler> compiler;
+
 public:
     bool optimize = false;
     bool debug = false;
     bool print = false;
 
     explicit ShaderLoader(vk::SharedDevice device);
+
     ~ShaderLoader();
 
-    ShaderStageModule load(const std::string& shader_name);
+    ShaderStageModule load(const std::string &shader_name);
 
     // TODO: Maybe a builder makes more sense
     std::pair<vk::UniquePipelineLayout, vk::UniquePipeline> link(
-        vk::RenderPass& render_pass,
-        std::initializer_list<std::reference_wrapper<ShaderStageModule>> stages,
+        vk::RenderPass &render_pass,
+        std::initializer_list<std::reference_wrapper<ShaderStageModule> > stages,
         std::span<const vk::VertexInputBindingDescription> vertex_bindings,
         std::span<const vk::VertexInputAttributeDescription> vertex_attributes,
         std::span<const vk::DescriptorSetLayout> descriptor_set_layouts,

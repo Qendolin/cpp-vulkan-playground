@@ -1,6 +1,5 @@
 #include "ShaderCompiler.h"
 
-
 #include <filesystem>
 #include <fstream>
 
@@ -10,7 +9,7 @@
 #include <utility>
 #include <vulkan/vulkan.hpp>
 
-static std::string read_file(const std::filesystem::path& path) {
+static std::string read_file(const std::filesystem::path &path) {
     std::ifstream file(path, std::ios::binary);
     if (!file.is_open()) {
         Logger::panic("Error opening file: " + std::filesystem::absolute(path).string());
@@ -44,8 +43,7 @@ class ShaderIncluder : public shaderc::CompileOptions::IncluderInterface {
         }
     };
 
-    shaderc_include_result *GetInclude(const char *requested_source, shaderc_include_type type,
-                                       const char *requesting_source, size_t include_depth) override {
+    shaderc_include_result *GetInclude(const char *requested_source, shaderc_include_type type, const char *requesting_source, size_t include_depth) override {
         std::filesystem::path file_path;
         if (type == shaderc_include_type_relative) {
             file_path = std::filesystem::path(requesting_source).parent_path() / requested_source;
@@ -85,13 +83,26 @@ std::vector<uint32_t> ShaderCompiler::compile(const std::filesystem::path &sourc
 
     shaderc_shader_kind kind;
     switch (stage) {
-        case vk::ShaderStageFlagBits::eVertex: kind = shaderc_vertex_shader; break;
-        case vk::ShaderStageFlagBits::eTessellationControl: kind = shaderc_tess_control_shader; break;
-        case vk::ShaderStageFlagBits::eTessellationEvaluation: kind = shaderc_tess_evaluation_shader; break;
-        case vk::ShaderStageFlagBits::eGeometry: kind = shaderc_geometry_shader; break;
-        case vk::ShaderStageFlagBits::eFragment: kind = shaderc_fragment_shader; break;
-        case vk::ShaderStageFlagBits::eCompute: kind = shaderc_compute_shader; break;
-        default: Logger::panic("Unknown shader type: " + source_path.string());
+        case vk::ShaderStageFlagBits::eVertex:
+            kind = shaderc_vertex_shader;
+            break;
+        case vk::ShaderStageFlagBits::eTessellationControl:
+            kind = shaderc_tess_control_shader;
+            break;
+        case vk::ShaderStageFlagBits::eTessellationEvaluation:
+            kind = shaderc_tess_evaluation_shader;
+            break;
+        case vk::ShaderStageFlagBits::eGeometry:
+            kind = shaderc_geometry_shader;
+            break;
+        case vk::ShaderStageFlagBits::eFragment:
+            kind = shaderc_fragment_shader;
+            break;
+        case vk::ShaderStageFlagBits::eCompute:
+            kind = shaderc_compute_shader;
+            break;
+        default:
+            Logger::panic("Unknown shader type: " + source_path.string());
     }
 
     shaderc::PreprocessedSourceCompilationResult preprocessed_result = compiler->PreprocessGlsl(
@@ -101,7 +112,7 @@ std::vector<uint32_t> ShaderCompiler::compile(const std::filesystem::path &sourc
         Logger::panic(preprocessed_result.GetErrorMessage());
     }
 
-    std::string preprocessed_code = { preprocessed_result.cbegin(), preprocessed_result.cend() };
+    std::string preprocessed_code = {preprocessed_result.cbegin(), preprocessed_result.cend()};
 
     if (opt.print)
         Logger::info("Preprocessed source of " + source_path.string() + ": \n" + preprocessed_code);

@@ -80,7 +80,8 @@ GraphicsBackend::GraphicsBackend() {
     std::array required_device_extensions = {vk::KHRSwapchainExtensionName, vk::EXTMemoryBudgetExtensionName};
     for (auto device: instance->enumeratePhysicalDevices()) {
         auto device_properties = device.getProperties();
-        if (device_properties.deviceType != vk::PhysicalDeviceType::eDiscreteGpu) continue;
+        if (device_properties.deviceType != vk::PhysicalDeviceType::eDiscreteGpu)
+            continue;
 
         bool missing_required_extension = false;
         auto device_extensions = device.enumerateDeviceExtensionProperties();
@@ -93,23 +94,28 @@ GraphicsBackend::GraphicsBackend() {
                 break;
             }
         }
-        if (missing_required_extension) continue;
+        if (missing_required_extension)
+            continue;
 
         vk::PhysicalDeviceFeatures features = device.getFeatures();
-        if (!features.samplerAnisotropy) continue;
+        if (!features.samplerAnisotropy)
+            continue;
 
         uint32_t queue_index = -1;
         for (auto queue_family_properties: device.getQueueFamilyProperties()) {
             queue_index++;
 
-            if (!(queue_family_properties.queueFlags & vk::QueueFlagBits::eGraphics)) continue;
-            if (!device.getSurfaceSupportKHR(queue_index, *surface)) continue;
+            if (!(queue_family_properties.queueFlags & vk::QueueFlagBits::eGraphics))
+                continue;
+            if (!device.getSurfaceSupportKHR(queue_index, *surface))
+                continue;
 
             this->graphicsQueueIndex = queue_index;
             this->phyicalDevice = device;
             break;
         }
-        if (this->graphicsQueueIndex != -1) break;
+        if (this->graphicsQueueIndex != -1)
+            break;
     }
 
     if (this->phyicalDevice == nullptr)
@@ -117,7 +123,6 @@ GraphicsBackend::GraphicsBackend() {
 
     std::string device_name = this->phyicalDevice.getProperties().deviceName;
     Logger::info("Usig GPU: " + device_name);
-
 
     constexpr float queue_priority = 1.0f;
     std::array queue_create_infos = {
@@ -167,11 +172,13 @@ GraphicsBackend::GraphicsBackend() {
         {
             .size = stagingMappedMemorySize,
             .usage = vk::BufferUsageFlagBits::eTransferSrc,
-        }, {
+        },
+        {
             .flags = vma::AllocationCreateFlagBits::eHostAccessSequentialWrite | vma::AllocationCreateFlagBits::eMapped,
             .usage = vma::MemoryUsage::eAuto,
             .requiredFlags = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
-        }, &staging_info);
+        },
+        &staging_info);
     this->stagingBuffer = std::move(staging);
     this->stagingAllocation = std::move(staging_mem);
     this->stagingMappedMemory = staging_info.pMappedData;
@@ -185,16 +192,16 @@ void GraphicsBackend::createRenderPass() { {
                                                                          .format = vk::Format::eD32Sfloat,
                                                                          .extent = {
                                                                              .width = surfaceExtents.width,
-                                                                             .height = surfaceExtents.height, .depth = 1
+                                                                             .height = surfaceExtents.height,
+                                                                             .depth = 1
                                                                          },
                                                                          .mipLevels = 1,
                                                                          .arrayLayers = 1,
-                                                                         .usage =
-                                                                         vk::ImageUsageFlagBits::eDepthStencilAttachment,
-                                                                     }, {
+                                                                         .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment,
+                                                                     },
+                                                                     {
                                                                          .usage = vma::MemoryUsage::eAutoPreferDevice,
-                                                                         .requiredFlags =
-                                                                         vk::MemoryPropertyFlagBits::eDeviceLocal,
+                                                                         .requiredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal,
                                                                      });
         this->depthImage = std::move(depth_image);
         this->depthImageAllocation = std::move(depth_mem);
@@ -290,8 +297,8 @@ void GraphicsBackend::createSwapchain() {
     auto surface_present_modes = phyicalDevice.getSurfacePresentModesKHR(*surface);;
 
     auto surface_format_iter = std::find_if(surface_formats.begin(), surface_formats.end(), [](auto &&format) {
-        return (format.format == vk::Format::eB8G8R8A8Srgb || format.format == vk::Format::eR8G8B8A8Srgb) && format.
-               colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear;
+        return (format.format == vk::Format::eB8G8R8A8Srgb || format.format == vk::Format::eR8G8B8A8Srgb) && format.colorSpace ==
+               vk::ColorSpaceKHR::eSrgbNonlinear;
     });
     if (surface_format_iter == surface_formats.end())
         Logger::panic("No suitable surface fromat found");
@@ -393,11 +400,10 @@ void GraphicsBackend::submitImmediate(std::function<void(vk::CommandBuffer cmd_b
             .commandPool = *commandPool,
             .level = vk::CommandBufferLevel::ePrimary,
             .commandBufferCount = 1,
-        }).front());
+        })
+        .front());
 
-    cmd_buf->begin({
-        .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit
-    });
+    cmd_buf->begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
 
     func(*cmd_buf);
 
@@ -407,7 +413,8 @@ void GraphicsBackend::submitImmediate(std::function<void(vk::CommandBuffer cmd_b
     graphicsQueue.submit(vk::SubmitInfo{
                              .commandBufferCount = 1,
                              .pCommandBuffers = &*cmd_buf
-                         }, *fence);
+                         },
+                         *fence);
     while (device->waitForFences(*fence, true, UINT64_MAX) == vk::Result::eTimeout) {
     }
     device->resetFences(*fence);

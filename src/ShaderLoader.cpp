@@ -17,33 +17,39 @@ ShaderLoader::ShaderLoader(vk::SharedDevice device) : device(device) {
 
 ShaderLoader::~ShaderLoader() = default;
 
-
-ShaderStageModule ShaderLoader::load(const std::string& shader_name) {
+ShaderStageModule ShaderLoader::load(const std::string &shader_name) {
     std::filesystem::path source_path(shader_name);
     vk::ShaderStageFlagBits stage;
     auto ext = source_path.extension().string().substr(1);
-    if(ext == "vert") stage = vk::ShaderStageFlagBits::eVertex;
-    else if(ext == "tesc") stage = vk::ShaderStageFlagBits::eTessellationControl;
-    else if(ext == "tese") stage = vk::ShaderStageFlagBits::eTessellationEvaluation;
-    else if(ext == "geom") stage = vk::ShaderStageFlagBits::eGeometry;
-    else if(ext == "frag") stage = vk::ShaderStageFlagBits::eFragment;
-    else if(ext == "comp") stage = vk::ShaderStageFlagBits::eCompute;
-    else Logger::panic("Unknown shader type: " + source_path.string());
+    if (ext == "vert")
+        stage = vk::ShaderStageFlagBits::eVertex;
+    else if (ext == "tesc")
+        stage = vk::ShaderStageFlagBits::eTessellationControl;
+    else if (ext == "tese")
+        stage = vk::ShaderStageFlagBits::eTessellationEvaluation;
+    else if (ext == "geom")
+        stage = vk::ShaderStageFlagBits::eGeometry;
+    else if (ext == "frag")
+        stage = vk::ShaderStageFlagBits::eFragment;
+    else if (ext == "comp")
+        stage = vk::ShaderStageFlagBits::eCompute;
+    else
+        Logger::panic("Unknown shader type: " + source_path.string());
 
     auto binary = compiler->compile(source_path, stage, {optimize, debug, print});
 
     auto module_create_info = vk::ShaderModuleCreateInfo{
         .codeSize = binary.size() * sizeof(uint32_t),
-        .pCode    = binary.data(),
+        .pCode = binary.data(),
     };
 
     auto shader_module = device->createShaderModuleUnique(module_create_info);
 
-    return { stage, std::move(shader_module) };
+    return {stage, std::move(shader_module)};
 }
 
 std::pair<vk::UniquePipelineLayout, vk::UniquePipeline> ShaderLoader::link(
-    vk::RenderPass &render_pass, std::initializer_list<std::reference_wrapper<ShaderStageModule>> stages,
+    vk::RenderPass &render_pass, std::initializer_list<std::reference_wrapper<ShaderStageModule> > stages,
     std::span<const vk::VertexInputBindingDescription> vertex_bindings,
     std::span<const vk::VertexInputAttributeDescription> vertex_attributes,
     std::span<const vk::DescriptorSetLayout> descriptor_set_layouts,
@@ -51,7 +57,7 @@ std::pair<vk::UniquePipelineLayout, vk::UniquePipeline> ShaderLoader::link(
     std::vector<vk::PipelineShaderStageCreateInfo> stage_create_infos;
     stage_create_infos.reserve(stages.size());
 
-    for (auto stage : stages) {
+    for (auto stage: stages) {
         stage_create_infos.emplace_back(vk::PipelineShaderStageCreateInfo{
             .stage = stage.get().stage,
             .module = *stage.get().module,
@@ -108,7 +114,7 @@ std::pair<vk::UniquePipelineLayout, vk::UniquePipeline> ShaderLoader::link(
         .lineWidth = 1.0f,
     };
 
-    vk::PipelineMultisampleStateCreateInfo multisample_state_create_info {
+    vk::PipelineMultisampleStateCreateInfo multisample_state_create_info{
         .rasterizationSamples = vk::SampleCountFlagBits::e1,
         .sampleShadingEnable = false,
         .minSampleShading = 1.0f,
