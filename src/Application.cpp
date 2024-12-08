@@ -20,7 +20,7 @@ Application::Application() {
 Application::~Application() = default;
 
 struct Vertex {
-    glm::vec2 pos;
+    glm::vec3 pos;
     glm::vec3 color;
     glm::vec2 texCoord;
 
@@ -40,7 +40,7 @@ struct Vertex {
             vk::VertexInputAttributeDescription{
                 .location = 0,
                 .binding = 0,
-                .format = vk::Format::eR32G32Sfloat,
+                .format = vk::Format::eR32G32B32Sfloat,
                 .offset = offsetof(Vertex, pos)
             },
             vk::VertexInputAttributeDescription{
@@ -173,13 +173,19 @@ void Application::run() {
     });
 
     const std::vector<Vertex> vertices = {
-        {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-        {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-        {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-        {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}
+        {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+        {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+        {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
+
+        {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+        {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+        {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}
     };
     const std::vector<uint16_t> indices = {
-        0, 1, 2, 2, 3, 0
+        0, 1, 2, 2, 3, 0,
+        4, 5, 6, 6, 7, 4
     };
 
     vk::DeviceSize vbo_size = vertices.size() * sizeof(vertices[0]);
@@ -298,6 +304,9 @@ void Application::run() {
     }
 
     loader = std::make_unique<ShaderLoader>(backend->device);
+#ifndef NDEBUG
+    loader->debug = true;
+#endif
     auto vert_sh = loader->load("assets/test.vert");
     auto frag_sh = loader->load("assets/test.frag");
     auto [pipeline_layout, pipeline] = loader->link(
@@ -326,7 +335,7 @@ void Application::run() {
         float time = glfwGetTime();
         UniformBufferObject ubo_curr = {
             .model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
-            .view = glm::lookAt(glm::vec3(2.0f, 2.0f, -2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
+            .view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
             .proj = glm::perspective(glm::radians(45.0f),
                                      static_cast<float>(backend->surfaceExtents.width) / static_cast<float>(backend->surfaceExtents.height)
                                      / 1.0f, 0.1f, 10.0f)
@@ -356,7 +365,9 @@ void Application::run() {
         command_buffer.reset();
         command_buffer.begin(vk::CommandBufferBeginInfo{});
 
-        vk::ClearValue clear_color = {{{{0.0f, 0.0f, 0.0f, 1.0f}}}};
+        auto clear_vales = {
+            vk::ClearValue{.color = {{{0.0f, 0.0f, 0.0f, 1.0f}}}},
+            vk::ClearValue{.depthStencil =  {1.0f, 0}}};
         vk::RenderPassBeginInfo render_pass_begin_info = {
             .renderPass = *backend->renderPass,
             .framebuffer = *backend->framebuffers[image_index],
@@ -364,9 +375,8 @@ void Application::run() {
                 .offset = {},
                 .extent = backend->surfaceExtents
             },
-            .clearValueCount = 1,
-            .pClearValues = &clear_color,
         };
+        render_pass_begin_info.setClearValues(clear_vales);
         command_buffer.beginRenderPass(render_pass_begin_info, vk::SubpassContents::eInline);
 
         command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
@@ -380,11 +390,12 @@ void Application::run() {
                                            0.0f, 1.0f
                                        }
                                    });
+
         command_buffer.setScissor(0, {{{}, backend->surfaceExtents}});
         command_buffer.setCullMode(vk::CullModeFlagBits::eBack);
-        command_buffer.setDepthTestEnable(false);
+        command_buffer.setDepthTestEnable(true);
         command_buffer.setDepthWriteEnable(true);
-        command_buffer.setDepthCompareOp(vk::CompareOp::eLessOrEqual);
+        command_buffer.setDepthCompareOp(vk::CompareOp::eLess);
         command_buffer.setStencilTestEnable(false);
         command_buffer.setStencilOp(vk::StencilFaceFlagBits::eFrontAndBack, vk::StencilOp::eKeep, vk::StencilOp::eKeep,
                                     vk::StencilOp::eKeep, vk::CompareOp::eNever);

@@ -12,11 +12,17 @@ namespace shaderc {
     class Compiler;
 }
 
+struct ShaderCompileOptions {
+    bool optimize = false;
+    bool debug = false;
+    bool print = false;
+};
+
 class ShaderCompiler {
     std::unique_ptr<shaderc::Compiler> compiler;
 public:
     ShaderCompiler();
     ~ShaderCompiler();
 
-    std::vector<uint32_t> compile(const std::filesystem::path &source_path, vk::ShaderStageFlagBits stage, bool optimize, bool debug);
+    std::vector<uint32_t> compile(const std::filesystem::path &source_path, vk::ShaderStageFlagBits stage, ShaderCompileOptions opt);
 };

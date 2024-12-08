@@ -73,10 +73,10 @@ ShaderCompiler::ShaderCompiler() {
 
 ShaderCompiler::~ShaderCompiler() = default;
 
-std::vector<uint32_t> ShaderCompiler::compile(const std::filesystem::path &source_path, vk::ShaderStageFlagBits stage, bool optimize, bool debug) {
-    shaderc::CompileOptions options;
+std::vector<uint32_t> ShaderCompiler::compile(const std::filesystem::path &source_path, vk::ShaderStageFlagBits stage, ShaderCompileOptions opt) {
+    shaderc::CompileOptions options = {};
 
-    if (debug)
+    if (opt.debug)
         options.SetGenerateDebugInfo();
 
     options.SetIncluder(std::make_unique<ShaderIncluder>());
@@ -103,10 +103,11 @@ std::vector<uint32_t> ShaderCompiler::compile(const std::filesystem::path &sourc
 
     std::string preprocessed_code = { preprocessed_result.cbegin(), preprocessed_result.cend() };
 
-    if (debug)
+    if (opt.print)
         Logger::info("Preprocessed source of " + source_path.string() + ": \n" + preprocessed_code);
 
-    if (optimize) options.SetOptimizationLevel(shaderc_optimization_level_performance);
+    if (opt.optimize)
+        options.SetOptimizationLevel(shaderc_optimization_level_performance);
 
     shaderc::SpvCompilationResult module = compiler->CompileGlslToSpv(preprocessed_code, kind, source_path.string().c_str(), options);
 

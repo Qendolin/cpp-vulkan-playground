@@ -45,6 +45,10 @@ private:
     void *stagingMappedMemory;
     vk::DeviceSize stagingMappedMemorySize;
 
+    vma::UniqueImage depthImage;
+    vma::UniqueAllocation depthImageAllocation;
+    vk::UniqueImageView depthImageView;
+
 public:
     GraphicsBackend();
 

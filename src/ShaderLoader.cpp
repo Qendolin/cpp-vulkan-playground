@@ -30,7 +30,7 @@ ShaderStageModule ShaderLoader::load(const std::string& shader_name) {
     else if(ext == "comp") stage = vk::ShaderStageFlagBits::eCompute;
     else Logger::panic("Unknown shader type: " + source_path.string());
 
-    auto binary = compiler->compile(source_path, stage, optimize, debug);
+    auto binary = compiler->compile(source_path, stage, {optimize, debug, print});
 
     auto module_create_info = vk::ShaderModuleCreateInfo{
         .codeSize = binary.size() * sizeof(uint32_t),
@@ -100,7 +100,7 @@ std::pair<vk::UniquePipelineLayout, vk::UniquePipeline> ShaderLoader::link(
         .depthClampEnable = config.depthClampEnable,
         .rasterizerDiscardEnable = config.rasterizerDiscardEnable,
         .polygonMode = config.polygonMode,
-        .frontFace = vk::FrontFace::eCounterClockwise,
+        .frontFace = vk::FrontFace::eClockwise,
         .depthBiasEnable = config.depthBiasEnable,
         .depthBiasConstantFactor = config.depthBiasConstantFactor,
         .depthBiasClamp = config.depthBiasClamp,
@@ -136,6 +136,13 @@ std::pair<vk::UniquePipelineLayout, vk::UniquePipeline> ShaderLoader::link(
         .blendConstants = vk::ArrayWrapper1D<float, 4>({0.0f, 0.0f, 0.0f, 0.0f})
     };
 
+    vk::PipelineDepthStencilStateCreateInfo depth_stencil_state_create_info = {
+        .depthTestEnable = true,
+        .depthWriteEnable = true,
+        .depthCompareOp = vk::CompareOp::eLess,
+        .stencilTestEnable = false,
+    };
+
     vk::PipelineLayoutCreateInfo pipeline_layout_create_info = {
         .setLayoutCount = static_cast<uint32_t>(descriptor_set_layouts.size()),
         .pSetLayouts = descriptor_set_layouts.data(),
@@ -154,7 +161,7 @@ std::pair<vk::UniquePipelineLayout, vk::UniquePipeline> ShaderLoader::link(
         .pViewportState = &viewport_state_create_info,
         .pRasterizationState = &rasterization_state_create_info,
         .pMultisampleState = &multisample_state_create_info,
-        .pDepthStencilState = nullptr,
+        .pDepthStencilState = &depth_stencil_state_create_info,
         .pColorBlendState = &color_blend_state_create_info,
         .pDynamicState = &dynamic_state_create_info,
         .layout = *pipeline_layout,

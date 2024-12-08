@@ -27,6 +27,7 @@ class ShaderLoader {
 public:
     bool optimize = false;
     bool debug = false;
+    bool print = false;
 
     explicit ShaderLoader(vk::SharedDevice device);
     ~ShaderLoader();

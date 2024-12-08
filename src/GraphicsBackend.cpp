@@ -180,6 +180,36 @@ GraphicsBackend::GraphicsBackend() {
 GraphicsBackend::~GraphicsBackend() = default;
 
 void GraphicsBackend::createRenderPass() {
+
+    {
+        auto [depth_image, depth_mem] = allocator->createImageUnique({
+            .imageType = vk::ImageType::e2D,
+            .format = vk::Format::eD32Sfloat,
+            .extent = {
+               .width = surfaceExtents.width, .height = surfaceExtents.height, .depth = 1
+            },
+            .mipLevels = 1,
+            .arrayLayers = 1,
+            .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment,
+        }, {
+            .usage = vma::MemoryUsage::eAutoPreferDevice,
+            .requiredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal,
+        });
+        this->depthImage = std::move(depth_image);
+        this->depthImageAllocation = std::move(depth_mem);
+    }
+
+    depthImageView = device->createImageViewUnique({
+        .image = *depthImage,
+        .viewType = vk::ImageViewType::e2D,
+        .format = vk::Format::eD32Sfloat,
+        .subresourceRange = {
+            .aspectMask = vk::ImageAspectFlagBits::eDepth,
+            .levelCount = 1,
+            .layerCount = 1
+        }
+    });
+
     vk::AttachmentDescription color_attachment_description = {
         .format = surfaceFormat.format,
         .samples = vk::SampleCountFlagBits::e1,
@@ -196,29 +226,46 @@ void GraphicsBackend::createRenderPass() {
         .layout = vk::ImageLayout::eColorAttachmentOptimal
     };
 
+    vk::AttachmentDescription depth_attachment_description = {
+        .format = vk::Format::eD32Sfloat,
+        .samples = vk::SampleCountFlagBits::e1,
+        .loadOp = vk::AttachmentLoadOp::eClear,
+        .storeOp = vk::AttachmentStoreOp::eDontCare,
+        .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
+        .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
+        .initialLayout = vk::ImageLayout::eUndefined,
+        .finalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal
+    };
+
+    vk::AttachmentReference depth_attachment_reference = {
+        .attachment = 1,
+        .layout = vk::ImageLayout::eDepthStencilAttachmentOptimal
+    };
+
     vk::SubpassDescription subpass_description = {
         .pipelineBindPoint = vk::PipelineBindPoint::eGraphics,
         .colorAttachmentCount = 1,
-        .pColorAttachments = &color_attachment_reference
+        .pColorAttachments = &color_attachment_reference,
+        .pDepthStencilAttachment = &depth_attachment_reference
     };
 
     vk::SubpassDependency subpass_dependency = {
         .srcSubpass = vk::SubpassExternal,
         .dstSubpass = 0,
-        .srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput,
-        .dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput,
+        .srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests,
+        .dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests,
         .srcAccessMask = {},
-        .dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite,
+        .dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite,
     };
 
     vk::RenderPassCreateInfo render_pass_create_info = {
-        .attachmentCount = 1,
-        .pAttachments = &color_attachment_description,
         .subpassCount = 1,
         .pSubpasses = &subpass_description,
         .dependencyCount = 1,
         .pDependencies = &subpass_dependency,
     };
+    auto attachment_descriptions = {color_attachment_description, depth_attachment_description};
+    render_pass_create_info.setAttachments(attachment_descriptions);
 
     renderPass = device->createRenderPassUnique(render_pass_create_info);
 
@@ -226,12 +273,12 @@ void GraphicsBackend::createRenderPass() {
     for (auto &swapchain_image_view: swapchainColorImages) {
         vk::FramebufferCreateInfo framebuffer_create_info = {
             .renderPass = *renderPass,
-            .attachmentCount = 1,
-            .pAttachments = &(*swapchain_image_view),
             .width = surfaceExtents.width,
             .height = surfaceExtents.height,
             .layers = 1
         };
+        auto attachments = {*swapchain_image_view, *depthImageView};
+        framebuffer_create_info.setAttachments(attachments);
         framebuffers.emplace_back(device->createFramebufferUnique(framebuffer_create_info));
     }
 }
