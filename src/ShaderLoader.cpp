@@ -100,7 +100,7 @@ std::pair<vk::UniquePipelineLayout, vk::UniquePipeline> ShaderLoader::link(
         .depthClampEnable = config.depthClampEnable,
         .rasterizerDiscardEnable = config.rasterizerDiscardEnable,
         .polygonMode = config.polygonMode,
-        .frontFace = vk::FrontFace::eClockwise,
+        .frontFace = vk::FrontFace::eCounterClockwise,
         .depthBiasEnable = config.depthBiasEnable,
         .depthBiasConstantFactor = config.depthBiasConstantFactor,
         .depthBiasClamp = config.depthBiasClamp,

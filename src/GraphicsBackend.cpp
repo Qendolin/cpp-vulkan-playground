@@ -95,6 +95,9 @@ GraphicsBackend::GraphicsBackend() {
         }
         if (missing_required_extension) continue;
 
+        vk::PhysicalDeviceFeatures features = device.getFeatures();
+        if(!features.samplerAnisotropy) continue;
+
         uint32_t queue_index = -1;
         for (auto queue_family_properties: device.getQueueFamilyProperties()) {
             queue_index++;
@@ -125,7 +128,9 @@ GraphicsBackend::GraphicsBackend() {
         }
     };
 
-    vk::PhysicalDeviceFeatures device_features = {};
+    vk::PhysicalDeviceFeatures device_features = {
+        .samplerAnisotropy = true
+    };
 
     vk::DeviceCreateInfo device_create_info = {
         .queueCreateInfoCount = queue_create_infos.size(),

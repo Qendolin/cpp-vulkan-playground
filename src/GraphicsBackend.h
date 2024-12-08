@@ -38,8 +38,8 @@ public:
 
     vma::UniqueAllocator allocator;
 
-private:
     vma::UniqueBuffer stagingBuffer;
+private:
     vma::UniqueAllocation stagingAllocation;
     void *stagingMappedMemory;
     vk::DeviceSize stagingMappedMemorySize;
@@ -58,6 +58,16 @@ public:
     void createCommandBuffers(int max_frames_in_flight);
 
     void submitImmediate(std::function<void(vk::CommandBuffer cmd_buf)> &&func);
+
+    template<std::ranges::contiguous_range R>
+    void copyToStaging(R &&data) {
+        using T = std::ranges::range_value_t<R>;
+        vk::DeviceSize size = data.size() * sizeof(T);
+        if(size > stagingMappedMemorySize) {
+            throw std::exception("buffer to big for staging");
+        }
+        std::memcpy(stagingMappedMemory, data.data(), size);
+    }
 
     template<std::ranges::contiguous_range R>
     void uploadWithStaging(R &&data, vk::Buffer &dst) {
