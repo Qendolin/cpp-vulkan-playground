@@ -10,6 +10,9 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
+#define TINYOBJLOADER_IMPLEMENTATION
+#include <tiny_obj_loader.h>
+
 Application::Application() {
     backend = std::make_unique<GraphicsBackend>();
     backend->createSwapchain();
@@ -112,21 +115,20 @@ auto loadTexture(GraphicsBackend &backend, std::string_view filename) {
     backend.copyToStaging(std::span(pixels, width * height * 4)); // stb converts to 4ch
     stbi_image_free(pixels);
 
-    auto [image, image_mem] = backend.allocator->createImageUnique({
-                                                                       .imageType = vk::ImageType::e2D,
-                                                                       .format = vk::Format::eR8G8B8A8Srgb,
-                                                                       .extent = {
-                                                                           .width = width, .height = height, .depth = 1
-                                                                       },
-                                                                       .mipLevels = 1,
-                                                                       .arrayLayers = 1,
-                                                                       .usage = vk::ImageUsageFlagBits::eTransferDst |
-                                                                           vk::ImageUsageFlagBits::eSampled,
-                                                                   }, {
-                                                                       .usage = vma::MemoryUsage::eAuto,
-                                                                       .requiredFlags =
-                                                                       vk::MemoryPropertyFlagBits::eDeviceLocal,
-                                                                   });
+    auto [image, image_mem] = backend.allocator->createImageUnique(
+        {
+            .imageType = vk::ImageType::e2D,
+            .format = vk::Format::eR8G8B8A8Srgb,
+            .extent = {
+                .width = width, .height = height, .depth = 1
+            },
+            .mipLevels = 1,
+            .arrayLayers = 1,
+            .usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+        }, {
+            .usage = vma::MemoryUsage::eAuto,
+            .requiredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal,
+        });
     transitionImageLayout(backend, *image, vk::Format::eR8G8B8A8Srgb, 1, vk::ImageLayout::eUndefined,
                           vk::ImageLayout::eTransferDstOptimal);
     backend.submitImmediate([&backend, &image, width, height](vk::CommandBuffer cmd_buf) {
@@ -153,14 +155,20 @@ auto loadTexture(GraphicsBackend &backend, std::string_view filename) {
             .layerCount = 1
         }
     });
-    return std::tuple{std::move(image), std::move(image_view)};
+    return std::tuple{std::move(image), std::move(image_mem), std::move(image_view)};
 }
 
+static bool framebufferResized = false;
+
+static void framebufferResizeCallback(GLFWwindow *window, int width, int height) {
+    framebufferResized = true;
+    Logger::warning("Swapchain needs recreation: framebuffer resized");
+}
 
 void Application::run() {
     auto &device = backend->device;
 
-    auto [image, image_view] = loadTexture(*backend, "assets/texture.jpg");
+    auto [image, image_mem, image_view] = loadTexture(*backend, "assets/viking_room.png");
 
     float max_anisotropy = backend->phyicalDevice.getProperties().limits.maxSamplerAnisotropy;
     vk::UniqueSampler sampler = backend->device->createSamplerUnique({
@@ -172,21 +180,35 @@ void Application::run() {
         .borderColor = vk::BorderColor::eFloatOpaqueBlack,
     });
 
-    const std::vector<Vertex> vertices = {
-        {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-        {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-        {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-        {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
+    std::vector<Vertex> vertices;
+    std::vector<uint32_t> indices; {
+        tinyobj::attrib_t attrib;
+        std::vector<tinyobj::shape_t> shapes;
+        std::vector<tinyobj::material_t> materials;
+        std::string warn, err;
+        if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, "assets/viking_room.obj")) {
+            throw std::runtime_error(warn + err);
+        }
+        for (const auto &shape: shapes) {
+            for (const auto &index: shape.mesh.indices) {
+                Vertex vertex{};
 
-        {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-        {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-        {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-        {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}
-    };
-    const std::vector<uint16_t> indices = {
-        0, 1, 2, 2, 3, 0,
-        4, 5, 6, 6, 7, 4
-    };
+                vertex.pos = {
+                    attrib.vertices[3 * index.vertex_index + 0],
+                    attrib.vertices[3 * index.vertex_index + 1],
+                    attrib.vertices[3 * index.vertex_index + 2]
+                };
+                vertex.texCoord = {
+                    attrib.texcoords[2 * index.texcoord_index + 0],
+                    1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
+                };
+                vertex.color = {1.0f, 1.0f, 1.0f};
+
+                vertices.push_back(vertex);
+                indices.push_back(indices.size());
+            }
+        }
+    }
 
     vk::DeviceSize vbo_size = vertices.size() * sizeof(vertices[0]);
     auto [vbo, vbo_mem] = backend->allocator->createBufferUnique(
@@ -253,9 +275,10 @@ void Application::run() {
         vk::DescriptorSetLayoutCreateInfo().setBindings(bindings)
     );
 
-    std::initializer_list<vk::DescriptorPoolSize> ubo_pool_sizes = {{
-        .type = vk::DescriptorType::eUniformBuffer,
-        .descriptorCount = static_cast<uint32_t>(frameResources.size())
+    std::initializer_list<vk::DescriptorPoolSize> ubo_pool_sizes = {
+        {
+            .type = vk::DescriptorType::eUniformBuffer,
+            .descriptorCount = static_cast<uint32_t>(frameResources.size())
         },
         {
             .type = vk::DescriptorType::eCombinedImageSampler,
@@ -287,19 +310,22 @@ void Application::run() {
             .imageView = *image_view,
             .imageLayout = vk::ImageLayout::eReadOnlyOptimal
         };
-        auto descriptor_write = {vk::WriteDescriptorSet{
-            .dstSet = descriptor_set_pool.get(i),
-            .dstBinding = 0,
-            .descriptorCount = 1,
-            .descriptorType = vk::DescriptorType::eUniformBuffer,
-            .pBufferInfo = &ubo_buffer_info,
-        }, vk::WriteDescriptorSet{
-            .dstSet = descriptor_set_pool.get(i),
-            .dstBinding = 1,
-            .descriptorCount = 1,
-            .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-            .pImageInfo = &image_sampler_info,
-        }};
+        auto descriptor_write = {
+            vk::WriteDescriptorSet{
+                .dstSet = descriptor_set_pool.get(i),
+                .dstBinding = 0,
+                .descriptorCount = 1,
+                .descriptorType = vk::DescriptorType::eUniformBuffer,
+                .pBufferInfo = &ubo_buffer_info,
+            },
+            vk::WriteDescriptorSet{
+                .dstSet = descriptor_set_pool.get(i),
+                .dstBinding = 1,
+                .descriptorCount = 1,
+                .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+                .pImageInfo = &image_sampler_info,
+            }
+        };
         device->updateDescriptorSets(descriptor_write, nullptr);
     }
 
@@ -322,6 +348,8 @@ void Application::run() {
     };
     auto in_flight_fence_pool = frameResources.create(create_signaled_fence);
 
+    glfwSetFramebufferSizeCallback(*backend->window, framebufferResizeCallback);
+
     while (!backend->window->shouldClose()) {
         frameResources.advance();
         auto in_flight_fence = in_flight_fence_pool.get();
@@ -334,26 +362,32 @@ void Application::run() {
 
         float time = glfwGetTime();
         UniformBufferObject ubo_curr = {
-            .model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
+            .model = glm::rotate(glm::mat4(1.0f), time * glm::radians(30.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
             .view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
             .proj = glm::perspective(glm::radians(45.0f),
-                                     static_cast<float>(backend->surfaceExtents.width) / static_cast<float>(backend->surfaceExtents.height)
+                                     static_cast<float>(backend->surfaceExtents.width) / static_cast<float>(backend->
+                                         surfaceExtents.height)
                                      / 1.0f, 0.1f, 10.0f)
         };
 
         std::memcpy(ubo_pool.get().pointer, &ubo_curr, sizeof(ubo_curr));
 
         uint32_t image_index = 0;
+        bool recreate_swapchain = false;
         try {
             auto image_acquistion_result = device->acquireNextImageKHR(*backend->swapchain, UINT64_MAX,
                                                                        image_available_semaphore, nullptr);
             if (image_acquistion_result.result == vk::Result::eSuboptimalKHR) {
                 Logger::warning("Swapchain may need recreation: VK_SUBOPTIMAL_KHR");
+                recreate_swapchain = true;
             }
             image_index = image_acquistion_result.value;
         } catch (const vk::OutOfDateKHRError &) {
             Logger::warning("Swapchain needs recreation: VK_ERROR_OUT_OF_DATE_KHR");
-            // TODO: https://vulkan-tutorial.com/Drawing_a_triangle/Swap_chain_recreation#page_Handling-resizes-explicitly
+            recreate_swapchain = true;
+        }
+
+        if (recreate_swapchain) {
             backend->recreateSwapchain();
             continue;
         }
@@ -402,8 +436,9 @@ void Application::run() {
                                     vk::StencilOp::eKeep, vk::CompareOp::eNever);
 
         command_buffer.bindVertexBuffers(0, {*vbo}, {0});
-        command_buffer.bindIndexBuffer(*ibo, 0, vk::IndexType::eUint16);
-        command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipeline_layout, 0, descriptor_set_pool.get(), {});
+        command_buffer.bindIndexBuffer(*ibo, 0, vk::IndexType::eUint32);
+        command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipeline_layout, 0,
+                                          descriptor_set_pool.get(), {});
 
         command_buffer.drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
         command_buffer.endRenderPass();
@@ -422,15 +457,21 @@ void Application::run() {
                 .setSwapchains(*backend->swapchain)
                 .setImageIndices(image_index);
 
+        recreate_swapchain = false;
         try {
             vk::Result result = backend->graphicsQueue.presentKHR(present_info);
             if (result == vk::Result::eSuboptimalKHR) {
                 Logger::warning("Swapchain may need recreation: VK_SUBOPTIMAL_KHR");
+                recreate_swapchain = true;
             }
         } catch (const vk::OutOfDateKHRError &) {
             Logger::warning("Swapchain needs recreation: VK_ERROR_OUT_OF_DATE_KHR");
+            recreate_swapchain = true;
+        }
+
+        if (recreate_swapchain || framebufferResized) {
+            framebufferResized = false;
             backend->recreateSwapchain();
-            continue;
         }
     }
 
