@@ -106,7 +106,7 @@ void transitionImageLayout(GraphicsBackend &backend, vk::Image &image, vk::Forma
     });
 }
 
-void generateMipmaps(GraphicsBackend &backend, vk::Image& image, vk::Format format, uint32_t width, uint32_t height, uint32_t levels) {
+void generateMipmaps(GraphicsBackend &backend, vk::Image &image, vk::Format format, uint32_t width, uint32_t height, uint32_t levels) {
     vk::ImageMemoryBarrier2 barrier = {
         .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
         .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
@@ -120,7 +120,7 @@ void generateMipmaps(GraphicsBackend &backend, vk::Image& image, vk::Format form
     };
 
     auto format_properties = backend.phyicalDevice.getFormatProperties(format);
-    if(!(format_properties.optimalTilingFeatures & vk::FormatFeatureFlagBits::eSampledImageFilterLinear)) {
+    if (!(format_properties.optimalTilingFeatures & vk::FormatFeatureFlagBits::eSampledImageFilterLinear)) {
         Logger::panic("image format does not support linear blitting");
     }
 
@@ -145,18 +145,18 @@ void generateMipmaps(GraphicsBackend &backend, vk::Image& image, vk::Format form
             vk::ImageBlit blit = {
                 .srcSubresource = {
                     .aspectMask = vk::ImageAspectFlagBits::eColor,
-                    .mipLevel = i-1,
+                    .mipLevel = i - 1,
                     .baseArrayLayer = 0,
                     .layerCount = 1,
                 },
-                .srcOffsets = std::array{vk::Offset3D{0,0,0}, vk::Offset3D{level_width, level_height, 1}},
+                .srcOffsets = std::array{vk::Offset3D{0, 0, 0}, vk::Offset3D{level_width, level_height, 1}},
                 .dstSubresource = {
                     .aspectMask = vk::ImageAspectFlagBits::eColor,
                     .mipLevel = i,
                     .baseArrayLayer = 0,
                     .layerCount = 1,
                 },
-                .dstOffsets = std::array{vk::Offset3D{0,0,0}, vk::Offset3D{std::max(level_width/2, 1), std::max(level_height/2, 1), 1}}
+                .dstOffsets = std::array{vk::Offset3D{0, 0, 0}, vk::Offset3D{std::max(level_width / 2, 1), std::max(level_height / 2, 1), 1}}
             };
 
             cmd_buf.blitImage(
@@ -176,8 +176,8 @@ void generateMipmaps(GraphicsBackend &backend, vk::Image& image, vk::Format form
                 .pImageMemoryBarriers = &barrier
             });
 
-            level_width = std::max(level_width/2, 1);
-            level_height = std::max(level_height/2, 1);
+            level_width = std::max(level_width / 2, 1);
+            level_height = std::max(level_height / 2, 1);
         }
 
         barrier.subresourceRange.baseMipLevel = levels - 1;
@@ -193,7 +193,6 @@ void generateMipmaps(GraphicsBackend &backend, vk::Image& image, vk::Format form
             .pImageMemoryBarriers = &barrier
         });
     });
-
 }
 
 auto loadTexture(GraphicsBackend &backend, std::string_view filename, bool gen_mipmaps) {
@@ -232,10 +231,11 @@ auto loadTexture(GraphicsBackend &backend, std::string_view filename, bool gen_m
         cmd_buf.copyBufferToImage(*backend.stagingBuffer, *image, vk::ImageLayout::eTransferDstOptimal, img_copy_region);
     });
 
-    if(gen_mipmaps) {
+    if (gen_mipmaps) {
         generateMipmaps(backend, *image, vk::Format::eR8G8B8A8Srgb, width, height, mip_levels);
     } else {
-        transitionImageLayout(backend, *image, vk::Format::eR8G8B8A8Srgb, mip_levels, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
+        transitionImageLayout(backend, *image, vk::Format::eR8G8B8A8Srgb, mip_levels, vk::ImageLayout::eTransferDstOptimal,
+                              vk::ImageLayout::eShaderReadOnlyOptimal);
     }
 
 
