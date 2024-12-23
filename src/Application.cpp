@@ -106,13 +106,104 @@ void transitionImageLayout(GraphicsBackend &backend, vk::Image &image, vk::Forma
     });
 }
 
+void generateMipmaps(GraphicsBackend &backend, vk::Image& image, vk::Format format, uint32_t width, uint32_t height, uint32_t levels) {
+    vk::ImageMemoryBarrier2 barrier = {
+        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .image = image,
+        .subresourceRange = {
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1
+        }
+    };
 
-auto loadTexture(GraphicsBackend &backend, std::string_view filename) {
+    auto format_properties = backend.phyicalDevice.getFormatProperties(format);
+    if(!(format_properties.optimalTilingFeatures & vk::FormatFeatureFlagBits::eSampledImageFilterLinear)) {
+        Logger::panic("image format does not support linear blitting");
+    }
+
+    backend.submitImmediate([&barrier, image, width, height, levels](vk::CommandBuffer cmd_buf) {
+        auto level_width = static_cast<int32_t>(width);
+        auto level_height = static_cast<int32_t>(height);
+
+        for (uint32_t i = 1; i < levels; i++) {
+            barrier.subresourceRange.baseMipLevel = i - 1;
+            barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
+            barrier.newLayout = vk::ImageLayout::eTransferSrcOptimal;
+            barrier.srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
+            barrier.dstAccessMask = vk::AccessFlagBits2::eTransferRead;
+            barrier.srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
+            barrier.dstStageMask = vk::PipelineStageFlagBits2::eTransfer;
+
+            cmd_buf.pipelineBarrier2({
+                .imageMemoryBarrierCount = 1,
+                .pImageMemoryBarriers = &barrier
+            });
+
+            vk::ImageBlit blit = {
+                .srcSubresource = {
+                    .aspectMask = vk::ImageAspectFlagBits::eColor,
+                    .mipLevel = i-1,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1,
+                },
+                .srcOffsets = std::array{vk::Offset3D{0,0,0}, vk::Offset3D{level_width, level_height, 1}},
+                .dstSubresource = {
+                    .aspectMask = vk::ImageAspectFlagBits::eColor,
+                    .mipLevel = i,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1,
+                },
+                .dstOffsets = std::array{vk::Offset3D{0,0,0}, vk::Offset3D{std::max(level_width/2, 1), std::max(level_height/2, 1), 1}}
+            };
+
+            cmd_buf.blitImage(
+                image, vk::ImageLayout::eTransferSrcOptimal,
+                image, vk::ImageLayout::eTransferDstOptimal,
+                blit, vk::Filter::eLinear);
+
+            barrier.oldLayout = vk::ImageLayout::eTransferSrcOptimal;
+            barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+            barrier.srcAccessMask = vk::AccessFlagBits2::eTransferRead;
+            barrier.dstAccessMask = vk::AccessFlagBits2::eShaderRead;
+            barrier.srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
+            barrier.dstStageMask = vk::PipelineStageFlagBits2::eFragmentShader;
+
+            cmd_buf.pipelineBarrier2({
+                .imageMemoryBarrierCount = 1,
+                .pImageMemoryBarriers = &barrier
+            });
+
+            level_width = std::max(level_width/2, 1);
+            level_height = std::max(level_height/2, 1);
+        }
+
+        barrier.subresourceRange.baseMipLevel = levels - 1;
+        barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
+        barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+        barrier.srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
+        barrier.dstAccessMask = vk::AccessFlagBits2::eShaderRead;
+        barrier.srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
+        barrier.dstStageMask = vk::PipelineStageFlagBits2::eFragmentShader;
+
+        cmd_buf.pipelineBarrier2({
+            .imageMemoryBarrierCount = 1,
+            .pImageMemoryBarriers = &barrier
+        });
+    });
+
+}
+
+auto loadTexture(GraphicsBackend &backend, std::string_view filename, bool gen_mipmaps) {
     int tex_width, tex_height, tex_channels;
     stbi_uc *pixels = stbi_load(filename.data(), &tex_width, &tex_height, &tex_channels, STBI_rgb_alpha);
     uint32_t width = tex_width, height = tex_height;
     backend.copyToStaging(std::span(pixels, width * height * 4)); // stb converts to 4ch
     stbi_image_free(pixels);
+
+    uint32_t mip_levels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
 
     auto [image, image_mem] = backend.allocator->createImageUnique(
         {
@@ -121,14 +212,14 @@ auto loadTexture(GraphicsBackend &backend, std::string_view filename) {
             .extent = {
                 .width = width, .height = height, .depth = 1
             },
-            .mipLevels = 1,
+            .mipLevels = mip_levels,
             .arrayLayers = 1,
-            .usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+            .usage = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
         }, {
             .usage = vma::MemoryUsage::eAuto,
             .requiredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal,
         });
-    transitionImageLayout(backend, *image, vk::Format::eR8G8B8A8Srgb, 1, vk::ImageLayout::eUndefined,
+    transitionImageLayout(backend, *image, vk::Format::eR8G8B8A8Srgb, mip_levels, vk::ImageLayout::eUndefined,
                           vk::ImageLayout::eTransferDstOptimal);
     backend.submitImmediate([&backend, &image, width, height](vk::CommandBuffer cmd_buf) {
         vk::BufferImageCopy img_copy_region = {
@@ -140,7 +231,13 @@ auto loadTexture(GraphicsBackend &backend, std::string_view filename) {
         };
         cmd_buf.copyBufferToImage(*backend.stagingBuffer, *image, vk::ImageLayout::eTransferDstOptimal, img_copy_region);
     });
-    transitionImageLayout(backend, *image, vk::Format::eR8G8B8A8Srgb, 1, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
+
+    if(gen_mipmaps) {
+        generateMipmaps(backend, *image, vk::Format::eR8G8B8A8Srgb, width, height, mip_levels);
+    } else {
+        transitionImageLayout(backend, *image, vk::Format::eR8G8B8A8Srgb, mip_levels, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
+    }
+
 
     vk::UniqueImageView image_view = backend.device->createImageViewUnique({
         .image = *image,
@@ -148,7 +245,7 @@ auto loadTexture(GraphicsBackend &backend, std::string_view filename) {
         .format = vk::Format::eR8G8B8A8Srgb,
         .subresourceRange = {
             .aspectMask = vk::ImageAspectFlagBits::eColor,
-            .levelCount = 1,
+            .levelCount = mip_levels,
             .layerCount = 1
         }
     });
@@ -165,7 +262,7 @@ static void framebufferResizeCallback(GLFWwindow *window, int width, int height)
 void Application::run() {
     auto &device = backend->device;
 
-    auto [image, image_mem, image_view] = loadTexture(*backend, "assets/viking_room.png");
+    auto [image, image_mem, image_view] = loadTexture(*backend, "assets/viking_room.png", true);
 
     float max_anisotropy = backend->phyicalDevice.getProperties().limits.maxSamplerAnisotropy;
     vk::UniqueSampler sampler = backend->device->createSamplerUnique({
@@ -174,7 +271,8 @@ void Application::run() {
         .mipmapMode = vk::SamplerMipmapMode::eLinear,
         .anisotropyEnable = true,
         .maxAnisotropy = max_anisotropy,
-        .borderColor = vk::BorderColor::eFloatOpaqueBlack,
+        .maxLod = vk::LodClampNone,
+        .borderColor = vk::BorderColor::eFloatOpaqueBlack
     });
 
     std::vector<Vertex> vertices;
