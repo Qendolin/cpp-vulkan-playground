@@ -12,6 +12,8 @@ find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 find_package(unofficial-vulkan-memory-allocator-hpp CONFIG REQUIRED)
 find_package(Stb REQUIRED)
 find_package(tinyobjloader CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
+find_package(VulkanUtilityLibraries CONFIG REQUIRED)
 
 file(GLOB_RECURSE sources CONFIGURE_DEPENDS "src/*.cpp")
 file(GLOB_RECURSE headers CONFIGURE_DEPENDS "src/*.h")
@@ -27,3 +29,5 @@ target_link_libraries(cpp_vulkan_playground PRIVATE unofficial::shaderc::shaderc
 target_link_libraries(cpp_vulkan_playground PRIVATE GPUOpen::VulkanMemoryAllocator unofficial::VulkanMemoryAllocator-Hpp::VulkanMemoryAllocator-Hpp)
 target_include_directories(cpp_vulkan_playground PRIVATE ${Stb_INCLUDE_DIR})
 target_link_libraries(cpp_vulkan_playground PRIVATE tinyobjloader::tinyobjloader)
+target_link_libraries(cpp_vulkan_playground PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(cpp_vulkan_playground PRIVATE Vulkan::UtilityHeaders) # Unused-> Vulkan::SafeStruct Vulkan::LayerSettings  Vulkan::CompilerConfiguration

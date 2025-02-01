@@ -11,6 +11,34 @@
 #include <functional>
 #include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
 
+using TransientCommandBuffer = vk::UniqueHandle<vk::CommandBuffer, VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>;
+
+class StagingUploader {
+public:
+
+    explicit StagingUploader(const vma::Allocator &allocator) : allocator(allocator) {
+    }
+
+    ~StagingUploader() {
+        releaseAll();
+    }
+
+    vk::Buffer stage(const void* data, size_t size);
+
+    template<std::ranges::contiguous_range R>
+    vk::Buffer stage(R &&data) {
+        using T = std::ranges::range_value_t<R>;
+        size_t size = data.size() * sizeof(T);
+        return stage(data.data(), size);
+    }
+
+    void releaseAll();
+
+private:
+    const vma::Allocator &allocator;
+    std::vector<std::pair<vk::Buffer, vma::Allocation>> active;
+};
+
 class GraphicsBackend {
 public:
     std::unique_ptr<glfw::Context> glfw;
@@ -62,10 +90,12 @@ public:
 
     void createCommandBuffers(int max_frames_in_flight);
 
-    void submitImmediate(std::function<void(vk::CommandBuffer cmd_buf)> &&func);
+    [[nodiscard]] TransientCommandBuffer createTransientCommandBuffer() const;
+
+    void submit(TransientCommandBuffer &cmd_buf, bool wait) const;
 
     template<std::ranges::contiguous_range R>
-    void copyToStaging(R &&data) {
+    void copyToStaging(R &&data) const {
         using T = std::ranges::range_value_t<R>;
         vk::DeviceSize size = data.size() * sizeof(T);
         if (size > stagingMappedMemorySize) {
@@ -75,7 +105,7 @@ public:
     }
 
     template<std::ranges::contiguous_range R>
-    void uploadWithStaging(R &&data, vk::Buffer &dst) {
+    void uploadWithStaging(R &&data, vk::Buffer &dst) const {
         using T = std::ranges::range_value_t<R>;
 
         vk::DeviceSize size = data.size() * sizeof(T);
@@ -87,9 +117,9 @@ public:
             vk::DeviceSize block_size = std::min(size, stagingMappedMemorySize);
             std::memcpy(stagingMappedMemory, data.data() + offset, block_size);
 
-            submitImmediate([this, dst, size, offset](const vk::CommandBuffer &cmd_buf) {
-                cmd_buf.copyBuffer(*stagingBuffer, dst, vk::BufferCopy{.dstOffset = offset, .size = size});
-            });
+            TransientCommandBuffer cmd_buf = createTransientCommandBuffer();
+            cmd_buf->copyBuffer(*stagingBuffer, dst, vk::BufferCopy{.dstOffset = offset, .size = size});
+            submit(cmd_buf, true);
 
             left -= std::min(left, block_size);
         }

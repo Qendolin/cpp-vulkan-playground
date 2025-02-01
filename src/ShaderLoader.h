@@ -43,5 +43,6 @@ public:
         std::span<const vk::VertexInputBindingDescription> vertex_bindings,
         std::span<const vk::VertexInputAttributeDescription> vertex_attributes,
         std::span<const vk::DescriptorSetLayout> descriptor_set_layouts,
+        std::span<const vk::PushConstantRange> push_constant_ranges,
         ShaderProgramConfig config = {});
 };

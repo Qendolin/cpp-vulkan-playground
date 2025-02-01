@@ -3,15 +3,13 @@
 #include "GraphicsBackend.h"
 #include "Logger.h"
 #include "ShaderLoader.h"
+#include "gltf/Gltf.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-#define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
-
-#define TINYOBJLOADER_IMPLEMENTATION
-#include <tiny_obj_loader.h>
+#include "Texture.h"
+#include "Descriptors.h"
 
 Application::Application() {
     backend = std::make_unique<GraphicsBackend>();
@@ -69,189 +67,6 @@ struct Uniforms {
     alignas(16) glm::mat4 proj;
 };
 
-void transitionImageLayout(GraphicsBackend &backend, vk::Image &image, vk::Format format, uint32_t level_count, vk::ImageLayout oldLayout,
-                           vk::ImageLayout newLayout) {
-    backend.submitImmediate([&image, oldLayout, newLayout, level_count](vk::CommandBuffer cmd_buf) {
-        vk::ImageMemoryBarrier2 barrier = {
-            .oldLayout = oldLayout,
-            .newLayout = newLayout,
-            .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-            .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-            .image = image,
-            .subresourceRange = {
-                .aspectMask = vk::ImageAspectFlagBits::eColor,
-                .levelCount = level_count,
-                .layerCount = 1,
-            },
-        };
-
-        if (oldLayout == vk::ImageLayout::eUndefined && newLayout == vk::ImageLayout::eTransferDstOptimal) {
-            barrier.srcAccessMask = vk::AccessFlagBits2::eNone;
-            barrier.dstAccessMask = vk::AccessFlagBits2::eTransferWrite;
-            barrier.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe;
-            barrier.dstStageMask = vk::PipelineStageFlagBits2::eTransfer;
-        } else if (oldLayout == vk::ImageLayout::eTransferDstOptimal && newLayout == vk::ImageLayout::eShaderReadOnlyOptimal) {
-            barrier.srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
-            barrier.dstAccessMask = vk::AccessFlagBits2::eShaderRead;
-            barrier.srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
-            barrier.dstStageMask = vk::PipelineStageFlagBits2::eFragmentShader;
-        } else {
-            throw std::invalid_argument("unsupported layout transition");
-        }
-
-        cmd_buf.pipelineBarrier2({
-            .imageMemoryBarrierCount = 1,
-            .pImageMemoryBarriers = &barrier,
-        });
-    });
-}
-
-void generateMipmaps(GraphicsBackend &backend, vk::Image &image, vk::Format format, uint32_t width, uint32_t height, uint32_t levels) {
-    vk::ImageMemoryBarrier2 barrier = {
-        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .image = image,
-        .subresourceRange = {
-            .aspectMask = vk::ImageAspectFlagBits::eColor,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1
-        }
-    };
-
-    auto format_properties = backend.phyicalDevice.getFormatProperties(format);
-    if (!(format_properties.optimalTilingFeatures & vk::FormatFeatureFlagBits::eSampledImageFilterLinear)) {
-        Logger::panic("image format does not support linear blitting");
-    }
-
-    backend.submitImmediate([&barrier, image, width, height, levels](vk::CommandBuffer cmd_buf) {
-        auto level_width = static_cast<int32_t>(width);
-        auto level_height = static_cast<int32_t>(height);
-
-        for (uint32_t i = 1; i < levels; i++) {
-            barrier.subresourceRange.baseMipLevel = i - 1;
-            barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
-            barrier.newLayout = vk::ImageLayout::eTransferSrcOptimal;
-            barrier.srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
-            barrier.dstAccessMask = vk::AccessFlagBits2::eTransferRead;
-            barrier.srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
-            barrier.dstStageMask = vk::PipelineStageFlagBits2::eTransfer;
-
-            cmd_buf.pipelineBarrier2({
-                .imageMemoryBarrierCount = 1,
-                .pImageMemoryBarriers = &barrier
-            });
-
-            vk::ImageBlit blit = {
-                .srcSubresource = {
-                    .aspectMask = vk::ImageAspectFlagBits::eColor,
-                    .mipLevel = i - 1,
-                    .baseArrayLayer = 0,
-                    .layerCount = 1,
-                },
-                .srcOffsets = std::array{vk::Offset3D{0, 0, 0}, vk::Offset3D{level_width, level_height, 1}},
-                .dstSubresource = {
-                    .aspectMask = vk::ImageAspectFlagBits::eColor,
-                    .mipLevel = i,
-                    .baseArrayLayer = 0,
-                    .layerCount = 1,
-                },
-                .dstOffsets = std::array{vk::Offset3D{0, 0, 0}, vk::Offset3D{std::max(level_width / 2, 1), std::max(level_height / 2, 1), 1}}
-            };
-
-            cmd_buf.blitImage(
-                image, vk::ImageLayout::eTransferSrcOptimal,
-                image, vk::ImageLayout::eTransferDstOptimal,
-                blit, vk::Filter::eLinear);
-
-            barrier.oldLayout = vk::ImageLayout::eTransferSrcOptimal;
-            barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-            barrier.srcAccessMask = vk::AccessFlagBits2::eTransferRead;
-            barrier.dstAccessMask = vk::AccessFlagBits2::eShaderRead;
-            barrier.srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
-            barrier.dstStageMask = vk::PipelineStageFlagBits2::eFragmentShader;
-
-            cmd_buf.pipelineBarrier2({
-                .imageMemoryBarrierCount = 1,
-                .pImageMemoryBarriers = &barrier
-            });
-
-            level_width = std::max(level_width / 2, 1);
-            level_height = std::max(level_height / 2, 1);
-        }
-
-        barrier.subresourceRange.baseMipLevel = levels - 1;
-        barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
-        barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-        barrier.srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
-        barrier.dstAccessMask = vk::AccessFlagBits2::eShaderRead;
-        barrier.srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
-        barrier.dstStageMask = vk::PipelineStageFlagBits2::eFragmentShader;
-
-        cmd_buf.pipelineBarrier2({
-            .imageMemoryBarrierCount = 1,
-            .pImageMemoryBarriers = &barrier
-        });
-    });
-}
-
-auto loadTexture(GraphicsBackend &backend, std::string_view filename, bool gen_mipmaps) {
-    int tex_width, tex_height, tex_channels;
-    stbi_uc *pixels = stbi_load(filename.data(), &tex_width, &tex_height, &tex_channels, STBI_rgb_alpha);
-    uint32_t width = tex_width, height = tex_height;
-    backend.copyToStaging(std::span(pixels, width * height * 4)); // stb converts to 4ch
-    stbi_image_free(pixels);
-
-    uint32_t mip_levels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
-
-    auto [image, image_mem] = backend.allocator->createImageUnique(
-        {
-            .imageType = vk::ImageType::e2D,
-            .format = vk::Format::eR8G8B8A8Srgb,
-            .extent = {
-                .width = width, .height = height, .depth = 1
-            },
-            .mipLevels = mip_levels,
-            .arrayLayers = 1,
-            .usage = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
-        }, {
-            .usage = vma::MemoryUsage::eAuto,
-            .requiredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal,
-        });
-    transitionImageLayout(backend, *image, vk::Format::eR8G8B8A8Srgb, mip_levels, vk::ImageLayout::eUndefined,
-                          vk::ImageLayout::eTransferDstOptimal);
-    backend.submitImmediate([&backend, &image, width, height](vk::CommandBuffer cmd_buf) {
-        vk::BufferImageCopy img_copy_region = {
-            .imageSubresource = {
-                .aspectMask = vk::ImageAspectFlagBits::eColor,
-                .layerCount = 1
-            },
-            .imageExtent = {.width = width, .height = height, .depth = 1}
-        };
-        cmd_buf.copyBufferToImage(*backend.stagingBuffer, *image, vk::ImageLayout::eTransferDstOptimal, img_copy_region);
-    });
-
-    if (gen_mipmaps) {
-        generateMipmaps(backend, *image, vk::Format::eR8G8B8A8Srgb, width, height, mip_levels);
-    } else {
-        transitionImageLayout(backend, *image, vk::Format::eR8G8B8A8Srgb, mip_levels, vk::ImageLayout::eTransferDstOptimal,
-                              vk::ImageLayout::eShaderReadOnlyOptimal);
-    }
-
-
-    vk::UniqueImageView image_view = backend.device->createImageViewUnique({
-        .image = *image,
-        .viewType = vk::ImageViewType::e2D,
-        .format = vk::Format::eR8G8B8A8Srgb,
-        .subresourceRange = {
-            .aspectMask = vk::ImageAspectFlagBits::eColor,
-            .levelCount = mip_levels,
-            .layerCount = 1
-        }
-    });
-    return std::tuple{std::move(image), std::move(image_mem), std::move(image_view)};
-}
-
 static bool framebufferResized = false;
 
 static void framebufferResizeCallback(GLFWwindow *window, int width, int height) {
@@ -259,10 +74,14 @@ static void framebufferResizeCallback(GLFWwindow *window, int width, int height)
     Logger::warning("Swapchain needs recreation: framebuffer resized");
 }
 
+using MaterialDescriptorLayout = DescriptorSetLayout<
+    DescriptorBinding<0, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment>, // albedo
+    DescriptorBinding<1, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment>, // normal
+    DescriptorBinding<2, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment> // orm
+>;
+
 void Application::run() {
     auto &device = backend->device;
-
-    auto [image, image_mem, image_view] = loadTexture(*backend, "assets/viking_room.png", true);
 
     float max_anisotropy = backend->phyicalDevice.getProperties().limits.maxSamplerAnisotropy;
     vk::UniqueSampler sampler = backend->device->createSamplerUnique({
@@ -275,57 +94,78 @@ void Application::run() {
         .borderColor = vk::BorderColor::eFloatOpaqueBlack
     });
 
-    std::vector<Vertex> vertices;
-    std::vector<uint32_t> indices; {
-        tinyobj::attrib_t attrib;
-        std::vector<tinyobj::shape_t> shapes;
-        std::vector<tinyobj::material_t> materials;
-        std::string warn, err;
-        if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, "assets/viking_room.obj")) {
-            throw std::runtime_error(warn + err);
-        }
-        for (const auto &shape: shapes) {
-            for (const auto &index: shape.mesh.indices) {
-                Vertex vertex{};
+    gltf::SceneData gltf_data = gltf::load(*backend);
 
-                vertex.pos = {
-                    attrib.vertices[3 * index.vertex_index + 0],
-                    attrib.vertices[3 * index.vertex_index + 1],
-                    attrib.vertices[3 * index.vertex_index + 2]
-                };
-                vertex.texCoord = {
-                    attrib.texcoords[2 * index.texcoord_index + 0],
-                    1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
-                };
-                vertex.color = {1.0f, 1.0f, 1.0f};
+    std::vector<Texture> textures;
+    std::vector<vk::UniqueImageView> texture_views;
 
-                vertices.push_back(vertex);
-                indices.push_back(indices.size());
-            }
-        }
+    textures.reserve(gltf_data.images.size());
+    texture_views.reserve(gltf_data.images.size());
+    StagingUploader staging_uploader(*backend->allocator);
+    for (const auto &image: gltf_data.images) {
+        auto cmd_buf = backend->createTransientCommandBuffer();
+        auto &texture = textures.emplace_back();
+        texture = Texture::create(*backend->allocator, *cmd_buf, staging_uploader.stage(image.pixels), TextureCreateInfo(image));
+        texture.generateMipmaps(*cmd_buf);
+        texture.toShaderReadOnlyLayout(*cmd_buf);
+
+        backend->submit(cmd_buf, true);
+        staging_uploader.releaseAll();
+
+        texture_views.emplace_back() = texture.createDefaultView(*backend->device);
     }
 
-    vk::DeviceSize vb_size = vertices.size() * sizeof(vertices[0]);
-    auto [vertex_buf, vb_alloc] = backend->allocator->createBufferUnique(
-        {
-            .size = vb_size,
-            .usage = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
-        }, {
-            .usage = vma::MemoryUsage::eAutoPreferDevice,
-            .requiredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal,
-        });
-    vk::DeviceSize ib_size = indices.size() * sizeof(indices[0]);
-    auto [index_buf, ib_alloc] = backend->allocator->createBufferUnique(
-        {
-            .size = ib_size,
-            .usage = vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
-        }, {
-            .usage = vma::MemoryUsage::eAutoPreferDevice,
-            .requiredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal,
-        });
+    std::vector<DescriptorSet> material_descriptors;
 
-    backend->uploadWithStaging(vertices, *vertex_buf);
-    backend->uploadWithStaging(indices, *index_buf);
+    DescriptorAllocator descriptor_allocator(*device);
+    DescriptorSetLayout material_descriptor_layout = MaterialDescriptorLayout(*device, {});
+    for (auto &material: gltf_data.materials) {
+        material_descriptors.emplace_back() = descriptor_allocator.allocate(material_descriptor_layout);
+        const auto &descriptor_set = material_descriptors.back();
+        vk::DescriptorImageInfo albedo_image_info = {
+            .sampler = *sampler,
+            .imageView = *texture_views.at(material.albedo),
+            .imageLayout = vk::ImageLayout::eReadOnlyOptimal
+        };
+        vk::DescriptorImageInfo normal_image_info = {
+            .sampler = *sampler,
+            .imageView = *texture_views.at(material.normal),
+            .imageLayout = vk::ImageLayout::eReadOnlyOptimal
+        };
+        vk::DescriptorImageInfo orm_image_info = {
+            .sampler = *sampler,
+            .imageView = *texture_views.at(material.orm),
+            .imageLayout = vk::ImageLayout::eReadOnlyOptimal
+        };
+        device->updateDescriptorSets({
+                                         descriptor_set.write(0).setPImageInfo(&albedo_image_info),
+                                         descriptor_set.write(1).setPImageInfo(&normal_image_info),
+                                         descriptor_set.write(2).setPImageInfo(&orm_image_info),
+                                     }, {});
+    }
+
+    vma::AllocationCreateInfo allocation_create_info = {
+        .usage = vma::MemoryUsage::eAutoPreferDevice,
+        .requiredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal,
+    };
+    auto buffer_usage = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst;
+
+    auto [position_buf, pb_alloc] = backend->allocator->createBufferUnique({.size = gltf_data.vertex_position_data.size(), .usage = buffer_usage},
+                                                                           allocation_create_info);
+    auto [normal_buf, nb_alloc] = backend->allocator->createBufferUnique({.size = gltf_data.vertex_normal_data.size(), .usage = buffer_usage},
+                                                                         allocation_create_info);
+    auto [texcoord_buf, tcb_alloc] = backend->allocator->createBufferUnique({.size = gltf_data.vertex_texcoord_data.size(), .usage = buffer_usage},
+                                                                            allocation_create_info);
+    auto [index_buf, ib_alloc] = backend->allocator->createBufferUnique({
+                                                                            .size = gltf_data.index_data.size(),
+                                                                            .usage = vk::BufferUsageFlagBits::eIndexBuffer |
+                                                                                     vk::BufferUsageFlagBits::eTransferDst
+                                                                        }, allocation_create_info);
+
+    backend->uploadWithStaging(gltf_data.vertex_position_data, *position_buf);
+    backend->uploadWithStaging(gltf_data.vertex_normal_data, *normal_buf);
+    backend->uploadWithStaging(gltf_data.vertex_texcoord_data, *texcoord_buf);
+    backend->uploadWithStaging(gltf_data.index_data, *index_buf);
 
     auto uniform_buffers = frameResources.create([this] {
         vma::AllocationInfo ub_alloc_info = {};
@@ -402,7 +242,7 @@ void Application::run() {
         };
         vk::DescriptorImageInfo image_sampler_info = {
             .sampler = *sampler,
-            .imageView = *image_view,
+            .imageView = *texture_views.at(0),
             .imageLayout = vk::ImageLayout::eReadOnlyOptimal
         };
         auto descriptor_write = {
@@ -430,10 +270,13 @@ void Application::run() {
 #endif
     auto vert_sh = loader->load("assets/test.vert");
     auto frag_sh = loader->load("assets/test.frag");
+    vk::PushConstantRange push_constant_range = {.stageFlags = vk::ShaderStageFlagBits::eVertex, .offset = 0, .size = sizeof(glm::mat4)};
     auto [pipeline_layout, pipeline] = loader->link(
         *backend->renderPass, {vert_sh, frag_sh},
-        Vertex::bindingDescriptors(), Vertex::attributeDescriptors(),
-        std::array{*uniform_layout}, {});
+        gltf::Vertex::bindingDescriptors(), gltf::Vertex::attributeDescriptors(),
+        std::array{*uniform_layout, material_descriptor_layout.get()},
+        std::array{push_constant_range},
+        {});
 
     const auto create_semaphore = [device] { return device->createSemaphoreUnique(vk::SemaphoreCreateInfo{}); };
     auto image_available_semaphores = frameResources.create(create_semaphore);
@@ -458,9 +301,9 @@ void Application::run() {
         float time = static_cast<float>(glfwGetTime());
         float aspect_ratio = static_cast<float>(backend->surfaceExtents.width) / static_cast<float>(backend->surfaceExtents.height);
         Uniforms uniforms = {
-            .model = glm::rotate(glm::mat4(1.0f), time * glm::radians(30.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
-            .view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
-            .proj = glm::perspective(glm::radians(45.0f), aspect_ratio, 0.1f, 10.0f)
+            .model = glm::mat4(1.0), // deprecated
+            .view = glm::lookAt(glm::vec3(glm::cos(time * 0.3) * 8, 6.0f, glm::sin(time * 0.3) * 8), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f)),
+            .proj = glm::perspective(glm::radians(90.0f), aspect_ratio, 0.1f, 1000.0f)
         };
 
         std::memcpy(uniform_buffers.get().pointer, &uniforms, sizeof(uniforms));
@@ -528,12 +371,16 @@ void Application::run() {
         command_buffer.setStencilOp(vk::StencilFaceFlagBits::eFrontAndBack, vk::StencilOp::eKeep, vk::StencilOp::eKeep,
                                     vk::StencilOp::eKeep, vk::CompareOp::eNever);
 
-        command_buffer.bindVertexBuffers(0, {*vertex_buf}, {0});
+        command_buffer.bindVertexBuffers(0, {*position_buf, *normal_buf, *texcoord_buf}, {0, 0, 0});
         command_buffer.bindIndexBuffer(*index_buf, 0, vk::IndexType::eUint32);
-        command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipeline_layout, 0,
-                                          descriptor_sets.get(), {});
+        command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipeline_layout, 0, descriptor_sets.get(), {});
 
-        command_buffer.drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+        for (const auto &instance: gltf_data.instances) {
+            command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipeline_layout, 1, material_descriptors[instance.material.index].get(), {});
+
+            command_buffer.pushConstants(*pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &instance.transformation);
+            command_buffer.drawIndexed(instance.indexCount, 1, instance.indexOffset, instance.vertexOffset, 0);
+        }
         command_buffer.endRenderPass();
         command_buffer.end();
 

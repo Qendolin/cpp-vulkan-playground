@@ -53,6 +53,7 @@ std::pair<vk::UniquePipelineLayout, vk::UniquePipeline> ShaderLoader::link(
     std::span<const vk::VertexInputBindingDescription> vertex_bindings,
     std::span<const vk::VertexInputAttributeDescription> vertex_attributes,
     std::span<const vk::DescriptorSetLayout> descriptor_set_layouts,
+    std::span<const vk::PushConstantRange> push_constant_ranges,
     ShaderProgramConfig config) {
     std::vector<vk::PipelineShaderStageCreateInfo> stage_create_infos;
     stage_create_infos.reserve(stages.size());
@@ -152,8 +153,8 @@ std::pair<vk::UniquePipelineLayout, vk::UniquePipeline> ShaderLoader::link(
     vk::PipelineLayoutCreateInfo pipeline_layout_create_info = {
         .setLayoutCount = static_cast<uint32_t>(descriptor_set_layouts.size()),
         .pSetLayouts = descriptor_set_layouts.data(),
-        .pushConstantRangeCount = 0,
-        .pPushConstantRanges = nullptr
+        .pushConstantRangeCount = static_cast<uint32_t>(push_constant_ranges.size()),
+        .pPushConstantRanges = push_constant_ranges.data()
     };
 
     vk::UniquePipelineLayout pipeline_layout = device->createPipelineLayoutUnique(pipeline_layout_create_info);

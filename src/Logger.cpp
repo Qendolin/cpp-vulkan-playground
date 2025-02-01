@@ -59,6 +59,15 @@ void Logger::error(std::string_view message, std::source_location location) {
             << message << std::endl;
 }
 
+void Logger::check(bool be_true, std::string_view message, std::source_location location) {
+    if(be_true == true) return;
+    std::clog << "[CHK "
+            << shortFileName(location.file_name()) << ':'
+            << location.line() << ':'
+            << shortFunctionName(location.function_name()) << "]: "
+            << message << std::endl;
+}
+
 void Logger::panic(std::string_view message, std::stacktrace trace) {
     throw std::runtime_error("PANIC: " + std::string(message) + "\n" + std::to_string(trace));
 }

@@ -22,6 +22,31 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL vuklanErrorCallback(VkDebugUtilsMessageSev
     return VK_FALSE;
 }
 
+vk::Buffer StagingUploader::stage(const void *data, size_t size) {
+    vma::AllocationInfo allocation_result = {};
+    active.emplace_back() = allocator.createBuffer(
+        {
+            .size = size,
+            .usage = vk::BufferUsageFlagBits::eTransferSrc,
+        },
+        {
+            .flags = vma::AllocationCreateFlagBits::eHostAccessSequentialWrite | vma::AllocationCreateFlagBits::eMapped,
+            .usage = vma::MemoryUsage::eAuto,
+            .requiredFlags = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
+        },
+        &allocation_result);
+    std::memcpy(allocation_result.pMappedData, data, size);
+
+    return active.back().first;
+}
+
+void StagingUploader::releaseAll() {
+    for (auto &[buffer, alloc]: active) {
+        allocator.destroyBuffer(buffer, alloc);
+    }
+    active.clear();
+}
+
 GraphicsBackend::GraphicsBackend() {
     glfw = std::make_unique<glfw::Context>();
     window = std::make_unique<glfw::Window>(glfw::WindowCreateInfo{
@@ -394,18 +419,29 @@ void GraphicsBackend::createCommandBuffers(int max_frames_in_flight) {
     commandBuffers = device->allocateCommandBuffersUnique(command_buffer_allocate_info);
 }
 
-void GraphicsBackend::submitImmediate(std::function<void(vk::CommandBuffer cmd_buf)> &&func) {
-    vk::UniqueCommandBuffer cmd_buf = std::move(
-        device->allocateCommandBuffersUnique({
-            .commandPool = *commandPool,
-            .level = vk::CommandBufferLevel::ePrimary,
-            .commandBufferCount = 1,
-        })
-        .front());
+TransientCommandBuffer GraphicsBackend::createTransientCommandBuffer() const {
+    vk::UniqueCommandBuffer cmd_buf = std::move(device->allocateCommandBuffersUnique({
+        .commandPool = *commandPool,
+        .level = vk::CommandBufferLevel::ePrimary,
+        .commandBufferCount = 1,
+    }).front());
 
     cmd_buf->begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
 
-    func(*cmd_buf);
+    return cmd_buf;
+}
+
+void GraphicsBackend::submit(TransientCommandBuffer &cmd_buf, bool wait) const {
+    if (!wait) {
+        cmd_buf->end();
+        graphicsQueue.submit(vk::SubmitInfo{
+                                 .commandBufferCount = 1,
+                                 .pCommandBuffers = &*cmd_buf
+                             },
+                             nullptr);
+        cmd_buf.release();
+        return;
+    }
 
     vk::UniqueFence fence = device->createFenceUnique({});
 
@@ -418,4 +454,5 @@ void GraphicsBackend::submitImmediate(std::function<void(vk::CommandBuffer cmd_b
     while (device->waitForFences(*fence, true, UINT64_MAX) == vk::Result::eTimeout) {
     }
     device->resetFences(*fence);
+    cmd_buf.release();
 }
