@@ -11,6 +11,10 @@
 #include <vulkan/vulkan_structs.hpp>
 #include <vulkan/vulkan_enums.hpp>
 
+namespace std::filesystem {
+    class path;
+}
+
 struct PlainImageData;
 class GraphicsBackend;
 
@@ -42,24 +46,25 @@ namespace gltf {
         }
 
         static constexpr auto attributeDescriptors() {
+            // no offsets because they are not interleaved
             constexpr std::array desc{
                 vk::VertexInputAttributeDescription{
                     .location = 0,
                     .binding = 0,
                     .format = vk::Format::eR32G32B32Sfloat,
-                    .offset = offsetof(Vertex, pos)
+                    .offset = 0,
                 },
                 vk::VertexInputAttributeDescription{
                     .location = 1,
                     .binding = 1,
                     .format = vk::Format::eR32G32B32Sfloat,
-                    .offset = offsetof(Vertex, normal)
+                    .offset = 0,
                 },
                 vk::VertexInputAttributeDescription{
                     .location = 2,
                     .binding = 2,
                     .format = vk::Format::eR32G32Sfloat,
-                    .offset = offsetof(Vertex, texCoord)
+                    .offset = 0,
                 }
             };
             return desc;
@@ -95,5 +100,5 @@ namespace gltf {
         std::vector<Instance> instances;
     };
 
-    SceneData load(GraphicsBackend &backend);
+    SceneData load(const std::filesystem::path &path);
 }

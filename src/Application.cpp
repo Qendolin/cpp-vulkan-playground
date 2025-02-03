@@ -94,7 +94,7 @@ void Application::run() {
         .borderColor = vk::BorderColor::eFloatOpaqueBlack
     });
 
-    gltf::SceneData gltf_data = gltf::load(*backend);
+    gltf::SceneData gltf_data = gltf::load("assets/gltf_test.glb");
 
     std::vector<Texture> textures;
     std::vector<vk::UniqueImageView> texture_views;
@@ -303,7 +303,7 @@ void Application::run() {
         Uniforms uniforms = {
             .model = glm::mat4(1.0), // deprecated
             .view = glm::lookAt(glm::vec3(glm::cos(time * 0.3) * 8, 6.0f, glm::sin(time * 0.3) * 8), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f)),
-            .proj = glm::perspective(glm::radians(90.0f), aspect_ratio, 0.1f, 1000.0f)
+            .proj = glm::perspective(glm::radians(70.0f), aspect_ratio, 0.1f, 1000.0f)
         };
 
         std::memcpy(uniform_buffers.get().pointer, &uniforms, sizeof(uniforms));

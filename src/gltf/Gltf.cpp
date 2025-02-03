@@ -157,7 +157,7 @@ namespace gltf {
         }
     }
 
-    SceneData load(GraphicsBackend &backend) {
+    SceneData load(const std::filesystem::path &path) {
         using namespace tinygltf;
 
         Model model;
@@ -165,7 +165,7 @@ namespace gltf {
         std::string err;
         std::string warn;
 
-        bool ret = loader.LoadBinaryFromFile(&model, &err, &warn, "assets/gltf_test.glb");
+        bool ret = loader.LoadBinaryFromFile(&model, &err, &warn, path.string());
 
         if (!warn.empty()) {
             Logger::warning("GLTF: " + warn);
