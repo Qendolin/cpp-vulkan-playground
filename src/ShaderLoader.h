@@ -38,7 +38,7 @@ public:
 
     // TODO: Maybe a builder makes more sense
     std::pair<vk::UniquePipelineLayout, vk::UniquePipeline> link(
-        vk::RenderPass &render_pass,
+        std::span<const vk::Format> color_attachment_fromats, vk::Format depth_attchment_format,
         std::initializer_list<std::reference_wrapper<ShaderStageModule> > stages,
         std::span<const vk::VertexInputBindingDescription> vertex_bindings,
         std::span<const vk::VertexInputAttributeDescription> vertex_attributes,

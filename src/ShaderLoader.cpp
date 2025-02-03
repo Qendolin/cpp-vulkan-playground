@@ -49,7 +49,8 @@ ShaderStageModule ShaderLoader::load(const std::string &shader_name) {
 }
 
 std::pair<vk::UniquePipelineLayout, vk::UniquePipeline> ShaderLoader::link(
-    vk::RenderPass &render_pass, std::initializer_list<std::reference_wrapper<ShaderStageModule> > stages,
+    std::span<const vk::Format> color_attachment_fromats, vk::Format depth_attchment_format,
+    std::initializer_list<std::reference_wrapper<ShaderStageModule> > stages,
     std::span<const vk::VertexInputBindingDescription> vertex_bindings,
     std::span<const vk::VertexInputAttributeDescription> vertex_attributes,
     std::span<const vk::DescriptorSetLayout> descriptor_set_layouts,
@@ -172,9 +173,15 @@ std::pair<vk::UniquePipelineLayout, vk::UniquePipeline> ShaderLoader::link(
         .pColorBlendState = &color_blend_state_create_info,
         .pDynamicState = &dynamic_state_create_info,
         .layout = *pipeline_layout,
-        .renderPass = render_pass,
         .subpass = 0,
     };
+
+    vk::PipelineRenderingCreateInfoKHR pipeline_rendering_create_info{
+        .colorAttachmentCount = static_cast<uint32_t>(color_attachment_fromats.size()),
+        .pColorAttachmentFormats = color_attachment_fromats.data(),
+        .depthAttachmentFormat = depth_attchment_format
+    };
+    graphics_pipeline_create_info.pNext = &pipeline_rendering_create_info;
 
     auto pipeline = device->createGraphicsPipelineUnique(nullptr, graphics_pipeline_create_info).value;
     return std::make_pair(std::move(pipeline_layout), std::move(pipeline));

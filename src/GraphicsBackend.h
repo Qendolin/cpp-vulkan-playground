@@ -53,29 +53,33 @@ public:
     uint32_t graphicsQueueIndex = -1;
     vk::Queue graphicsQueue = nullptr;
 
-    vk::SurfaceFormatKHR surfaceFormat;
-    vk::Extent2D surfaceExtents;
-    vk::UniqueSwapchainKHR swapchain;
-    std::vector<vk::UniqueImageView> swapchainColorImages;
-
-    vk::UniqueRenderPass renderPass;
-    std::vector<vk::UniqueFramebuffer> framebuffers;
+    // vk::UniqueRenderPass renderPass;
+    // std::vector<vk::UniqueFramebuffer> framebuffers;
 
     vk::UniqueCommandPool commandPool;
     std::vector<vk::UniqueCommandBuffer> commandBuffers;
 
+    // TODO: should move this up
     vma::UniqueAllocator allocator;
 
     vma::UniqueBuffer stagingBuffer;
+
+    vk::SurfaceFormatKHR surfaceFormat;
+    vk::Extent2D surfaceExtents;
+    vk::UniqueSwapchainKHR swapchain;
+    std::vector<vk::Image> swapchainColorImages;
+    std::vector<vk::UniqueImageView> swapchainColorImageViews;
+    vk::Format swapchainColorImageFormat;
+
+    vma::UniqueImage depthImage;
+    vma::UniqueAllocation depthImageAllocation;
+    vk::UniqueImageView depthImageView;
+    vk::Format depthImageFormat;
 
 private:
     vma::UniqueAllocation stagingAllocation;
     void *stagingMappedMemory;
     vk::DeviceSize stagingMappedMemorySize;
-
-    vma::UniqueImage depthImage;
-    vma::UniqueAllocation depthImageAllocation;
-    vk::UniqueImageView depthImageView;
 
 public:
     GraphicsBackend();

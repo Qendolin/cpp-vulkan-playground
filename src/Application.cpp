@@ -272,7 +272,8 @@ void Application::run() {
     auto frag_sh = loader->load("assets/test.frag");
     vk::PushConstantRange push_constant_range = {.stageFlags = vk::ShaderStageFlagBits::eVertex, .offset = 0, .size = sizeof(glm::mat4)};
     auto [pipeline_layout, pipeline] = loader->link(
-        *backend->renderPass, {vert_sh, frag_sh},
+        std::array{backend->swapchainColorImageFormat}, backend->depthImageFormat,
+        {vert_sh, frag_sh},
         gltf::Vertex::bindingDescriptors(), gltf::Vertex::attributeDescriptors(),
         std::array{*uniform_layout, material_descriptor_layout.get()},
         std::array{push_constant_range},
@@ -308,7 +309,7 @@ void Application::run() {
 
         std::memcpy(uniform_buffers.get().pointer, &uniforms, sizeof(uniforms));
 
-        uint32_t image_index = 0;
+        uint32_t swapchain_image_index = 0;
         bool recreate_swapchain = false;
         try {
             auto image_acquistion_result = device->acquireNextImageKHR(*backend->swapchain, UINT64_MAX,
@@ -317,7 +318,7 @@ void Application::run() {
                 Logger::warning("Swapchain may need recreation: VK_SUBOPTIMAL_KHR");
                 recreate_swapchain = true;
             }
-            image_index = image_acquistion_result.value;
+            swapchain_image_index = image_acquistion_result.value;
         } catch (const vk::OutOfDateKHRError &) {
             Logger::warning("Swapchain needs recreation: VK_ERROR_OUT_OF_DATE_KHR");
             recreate_swapchain = true;
@@ -335,20 +336,78 @@ void Application::run() {
         command_buffer.reset();
         command_buffer.begin(vk::CommandBufferBeginInfo{});
 
-        auto clear_vales = {
-            vk::ClearValue{.color = {{{0.0f, 0.0f, 0.0f, 1.0f}}}},
-            vk::ClearValue{.depthStencil = {1.0f, 0}}
+        // auto clear_vales = {
+        //     vk::ClearValue{.color = {{{0.0f, 0.0f, 0.0f, 1.0f}}}},
+        //     vk::ClearValue{.depthStencil = {1.0f, 0}}
+        // };
+        // vk::RenderPassBeginInfo render_pass_begin_info = {
+        //     .renderPass = *backend->renderPass,
+        //     .framebuffer = *backend->framebuffers[swapchain_image_index],
+        //     .renderArea = {
+        //         .offset = {},
+        //         .extent = backend->surfaceExtents
+        //     },
+        // };
+        // render_pass_begin_info.setClearValues(clear_vales);
+
+        vk::ImageMemoryBarrier2 color_attachment_attachment_barrier{
+            .srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
+            .dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+            .dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
+            .oldLayout = vk::ImageLayout::eUndefined,
+            .newLayout = vk::ImageLayout::eAttachmentOptimal,
+            .image = backend->swapchainColorImages[swapchain_image_index],
+            .subresourceRange = {
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .levelCount = 1,
+                .layerCount = 1,
+            }
         };
-        vk::RenderPassBeginInfo render_pass_begin_info = {
-            .renderPass = *backend->renderPass,
-            .framebuffer = *backend->framebuffers[image_index],
+        vk::ImageMemoryBarrier2 depth_attachment_attachment_barrier{
+            .srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
+            .dstStageMask = vk::PipelineStageFlagBits2::eEarlyFragmentTests,
+            .dstAccessMask = vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+            .oldLayout = vk::ImageLayout::eUndefined,
+            .newLayout = vk::ImageLayout::eAttachmentOptimal,
+            .image = *backend->depthImage,
+            .subresourceRange = {
+                .aspectMask = vk::ImageAspectFlagBits::eDepth,
+                .levelCount = 1,
+                .layerCount = 1,
+            }
+        };
+
+        auto attachment_barriers = std::array{color_attachment_attachment_barrier, depth_attachment_attachment_barrier};
+        command_buffer.pipelineBarrier2({
+            .imageMemoryBarrierCount = attachment_barriers.size(),
+            .pImageMemoryBarriers = attachment_barriers.data()
+        });
+
+        vk::RenderingAttachmentInfoKHR color_attachment_info{
+            .imageView = *backend->swapchainColorImageViews[swapchain_image_index],
+            .imageLayout = vk::ImageLayout::eAttachmentOptimal,
+            .loadOp = vk::AttachmentLoadOp::eClear,
+            .clearValue = {.color = {.float32 = std::array{0.0f, 0.0f, 0.0f, 1.0f}}}
+        };
+        vk::RenderingAttachmentInfoKHR depth_attachment_info{
+            .imageView = *backend->depthImageView,
+            .imageLayout = vk::ImageLayout::eAttachmentOptimal,
+            .loadOp = vk::AttachmentLoadOp::eClear,
+            .clearValue = {.depthStencil = {1.0f, 0}}
+        };
+        vk::RenderingInfoKHR redering_info = {
             .renderArea = {
                 .offset = {},
-                .extent = backend->surfaceExtents
+                .extent = backend->surfaceExtents,
             },
+            .layerCount = 1,
+            .colorAttachmentCount = 1,
+            .pColorAttachments = &color_attachment_info,
+            .pDepthAttachment = &depth_attachment_info
         };
-        render_pass_begin_info.setClearValues(clear_vales);
-        command_buffer.beginRenderPass(render_pass_begin_info, vk::SubpassContents::eInline);
+        command_buffer.beginRenderingKHR(redering_info);
+
+        // command_buffer.beginRenderPass(render_pass_begin_info, vk::SubpassContents::eInline);
 
         command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
 
@@ -381,7 +440,28 @@ void Application::run() {
             command_buffer.pushConstants(*pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &instance.transformation);
             command_buffer.drawIndexed(instance.indexCount, 1, instance.indexOffset, instance.vertexOffset, 0);
         }
-        command_buffer.endRenderPass();
+        // command_buffer.endRenderPass();
+        command_buffer.endRendering();
+
+        vk::ImageMemoryBarrier2 color_attachment_present_barrier{
+            .srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+            .srcAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
+            .dstStageMask = vk::PipelineStageFlagBits2::eBottomOfPipe,
+            .oldLayout = vk::ImageLayout::eAttachmentOptimal,
+            .newLayout = vk::ImageLayout::ePresentSrcKHR,
+            .image = backend->swapchainColorImages[swapchain_image_index],
+            .subresourceRange = {
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .levelCount = 1,
+                .layerCount = 1,
+            }
+        };
+
+        command_buffer.pipelineBarrier2({
+            .imageMemoryBarrierCount = 1,
+            .pImageMemoryBarriers = &color_attachment_present_barrier
+        });
+
         command_buffer.end();
 
         vk::PipelineStageFlags constexpr pipe_stage_flags = vk::PipelineStageFlagBits::eColorAttachmentOutput;
@@ -395,7 +475,7 @@ void Application::run() {
         vk::PresentInfoKHR present_info = vk::PresentInfoKHR()
                 .setWaitSemaphores(render_finished_semaphore)
                 .setSwapchains(*backend->swapchain)
-                .setImageIndices(image_index);
+                .setImageIndices(swapchain_image_index);
 
         recreate_swapchain = false;
         try {

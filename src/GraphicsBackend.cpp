@@ -74,7 +74,7 @@ GraphicsBackend::GraphicsBackend() {
     std::vector required_extensions = glfw->getRequiredInstanceExtensions();
     required_extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     instance_create_info.enabledExtensionCount = required_extensions.size();
-    instance_create_info.ppEnabledExtensionNames = &required_extensions.front();
+    instance_create_info.ppEnabledExtensionNames = required_extensions.data();
 
     std::array enabled_layers = {"VK_LAYER_KHRONOS_validation", "VK_LAYER_KHRONOS_synchronization2"};
 
@@ -102,7 +102,7 @@ GraphicsBackend::GraphicsBackend() {
 
     surface = window->createWindowSurfaceKHRUnique(*instance);
 
-    std::array required_device_extensions = {vk::KHRSwapchainExtensionName, vk::EXTMemoryBudgetExtensionName};
+    std::array required_device_extensions = {vk::KHRSwapchainExtensionName, vk::EXTMemoryBudgetExtensionName, vk::KHRDynamicRenderingExtensionName};
     for (auto device: instance->enumeratePhysicalDevices()) {
         auto device_properties = device.getProperties();
         if (device_properties.deviceType != vk::PhysicalDeviceType::eDiscreteGpu)
@@ -162,18 +162,25 @@ GraphicsBackend::GraphicsBackend() {
         .samplerAnisotropy = true
     };
 
+
     vk::DeviceCreateInfo device_create_info = {
         .queueCreateInfoCount = queue_create_infos.size(),
         .pQueueCreateInfos = queue_create_infos.data(),
         .enabledExtensionCount = required_device_extensions.size(),
         .ppEnabledExtensionNames = required_device_extensions.data(),
-        .pEnabledFeatures = &device_features
+        .pEnabledFeatures = &device_features,
     };
 
     vk::PhysicalDeviceSynchronization2Features sync_features = {
         .synchronization2 = true,
     };
     device_create_info.pNext = &sync_features;
+
+    vk::PhysicalDeviceDynamicRenderingFeaturesKHR dynamic_rendering_feature{
+        .dynamicRendering = true,
+    };
+    sync_features.pNext = &dynamic_rendering_feature;
+
 
     device = vk::SharedDevice(phyicalDevice.createDevice(device_create_info));
     graphicsQueue = device->getQueue(graphicsQueueIndex, 0);
@@ -211,23 +218,25 @@ GraphicsBackend::GraphicsBackend() {
 
 GraphicsBackend::~GraphicsBackend() = default;
 
-void GraphicsBackend::createRenderPass() { {
-        auto [depth_image, depth_mem] = allocator->createImageUnique({
-                                                                         .imageType = vk::ImageType::e2D,
-                                                                         .format = vk::Format::eD32Sfloat,
-                                                                         .extent = {
-                                                                             .width = surfaceExtents.width,
-                                                                             .height = surfaceExtents.height,
-                                                                             .depth = 1
-                                                                         },
-                                                                         .mipLevels = 1,
-                                                                         .arrayLayers = 1,
-                                                                         .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment,
-                                                                     },
-                                                                     {
-                                                                         .usage = vma::MemoryUsage::eAutoPreferDevice,
-                                                                         .requiredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal,
-                                                                     });
+void GraphicsBackend::createRenderPass() {
+    depthImageFormat = vk::Format::eD32Sfloat; {
+        auto [depth_image, depth_mem] = allocator->createImageUnique(
+            {
+                .imageType = vk::ImageType::e2D,
+                .format = depthImageFormat,
+                .extent = {
+                    .width = surfaceExtents.width,
+                    .height = surfaceExtents.height,
+                    .depth = 1
+                },
+                .mipLevels = 1,
+                .arrayLayers = 1,
+                .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment,
+            },
+            {
+                .usage = vma::MemoryUsage::eAutoPreferDevice,
+                .requiredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal,
+            });
         this->depthImage = std::move(depth_image);
         this->depthImageAllocation = std::move(depth_mem);
     }
@@ -235,7 +244,7 @@ void GraphicsBackend::createRenderPass() { {
     depthImageView = device->createImageViewUnique({
         .image = *depthImage,
         .viewType = vk::ImageViewType::e2D,
-        .format = vk::Format::eD32Sfloat,
+        .format = depthImageFormat,
         .subresourceRange = {
             .aspectMask = vk::ImageAspectFlagBits::eDepth,
             .levelCount = 1,
@@ -243,77 +252,77 @@ void GraphicsBackend::createRenderPass() { {
         }
     });
 
-    vk::AttachmentDescription color_attachment_description = {
-        .format = surfaceFormat.format,
-        .samples = vk::SampleCountFlagBits::e1,
-        .loadOp = vk::AttachmentLoadOp::eClear,
-        .storeOp = vk::AttachmentStoreOp::eStore,
-        .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
-        .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
-        .initialLayout = vk::ImageLayout::eUndefined,
-        .finalLayout = vk::ImageLayout::ePresentSrcKHR
-    };
-
-    vk::AttachmentReference color_attachment_reference = {
-        .attachment = 0,
-        .layout = vk::ImageLayout::eColorAttachmentOptimal
-    };
-
-    vk::AttachmentDescription depth_attachment_description = {
-        .format = vk::Format::eD32Sfloat,
-        .samples = vk::SampleCountFlagBits::e1,
-        .loadOp = vk::AttachmentLoadOp::eClear,
-        .storeOp = vk::AttachmentStoreOp::eDontCare,
-        .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
-        .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
-        .initialLayout = vk::ImageLayout::eUndefined,
-        .finalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal
-    };
-
-    vk::AttachmentReference depth_attachment_reference = {
-        .attachment = 1,
-        .layout = vk::ImageLayout::eDepthStencilAttachmentOptimal
-    };
-
-    vk::SubpassDescription subpass_description = {
-        .pipelineBindPoint = vk::PipelineBindPoint::eGraphics,
-        .colorAttachmentCount = 1,
-        .pColorAttachments = &color_attachment_reference,
-        .pDepthStencilAttachment = &depth_attachment_reference
-    };
-
-    vk::SubpassDependency subpass_dependency = {
-        .srcSubpass = vk::SubpassExternal,
-        .dstSubpass = 0,
-        .srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests,
-        .dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests,
-        .srcAccessMask = {},
-        .dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite,
-    };
-
-    vk::RenderPassCreateInfo render_pass_create_info = {
-        .subpassCount = 1,
-        .pSubpasses = &subpass_description,
-        .dependencyCount = 1,
-        .pDependencies = &subpass_dependency,
-    };
-    auto attachment_descriptions = {color_attachment_description, depth_attachment_description};
-    render_pass_create_info.setAttachments(attachment_descriptions);
-
-    renderPass = device->createRenderPassUnique(render_pass_create_info);
-
-    framebuffers.clear();
-    for (auto &swapchain_image_view: swapchainColorImages) {
-        vk::FramebufferCreateInfo framebuffer_create_info = {
-            .renderPass = *renderPass,
-            .width = surfaceExtents.width,
-            .height = surfaceExtents.height,
-            .layers = 1
-        };
-        auto attachments = {*swapchain_image_view, *depthImageView};
-        framebuffer_create_info.setAttachments(attachments);
-        framebuffers.emplace_back(device->createFramebufferUnique(framebuffer_create_info));
-    }
+    // vk::AttachmentDescription color_attachment_description = {
+    //     .format = surfaceFormat.format,
+    //     .samples = vk::SampleCountFlagBits::e1,
+    //     .loadOp = vk::AttachmentLoadOp::eClear,
+    //     .storeOp = vk::AttachmentStoreOp::eStore,
+    //     .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
+    //     .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
+    //     .initialLayout = vk::ImageLayout::eUndefined,
+    //     .finalLayout = vk::ImageLayout::ePresentSrcKHR
+    // };
+    //
+    // vk::AttachmentReference color_attachment_reference = {
+    //     .attachment = 0,
+    //     .layout = vk::ImageLayout::eColorAttachmentOptimal
+    // };
+    //
+    // vk::AttachmentDescription depth_attachment_description = {
+    //     .format = vk::Format::eD32Sfloat,
+    //     .samples = vk::SampleCountFlagBits::e1,
+    //     .loadOp = vk::AttachmentLoadOp::eClear,
+    //     .storeOp = vk::AttachmentStoreOp::eDontCare,
+    //     .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
+    //     .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
+    //     .initialLayout = vk::ImageLayout::eUndefined,
+    //     .finalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal
+    // };
+    //
+    // vk::AttachmentReference depth_attachment_reference = {
+    //     .attachment = 1,
+    //     .layout = vk::ImageLayout::eDepthStencilAttachmentOptimal
+    // };
+    //
+    // vk::SubpassDescription subpass_description = {
+    //     .pipelineBindPoint = vk::PipelineBindPoint::eGraphics,
+    //     .colorAttachmentCount = 1,
+    //     .pColorAttachments = &color_attachment_reference,
+    //     .pDepthStencilAttachment = &depth_attachment_reference
+    // };
+    //
+    // vk::SubpassDependency subpass_dependency = {
+    //     .srcSubpass = vk::SubpassExternal,
+    //     .dstSubpass = 0,
+    //     .srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests,
+    //     .dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests,
+    //     .srcAccessMask = {},
+    //     .dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite,
+    // };
+    //
+    // vk::RenderPassCreateInfo render_pass_create_info = {
+    //     .subpassCount = 1,
+    //     .pSubpasses = &subpass_description,
+    //     .dependencyCount = 1,
+    //     .pDependencies = &subpass_dependency,
+    // };
+    // auto attachment_descriptions = {color_attachment_description, depth_attachment_description};
+    // render_pass_create_info.setAttachments(attachment_descriptions);
+    //
+    // renderPass = device->createRenderPassUnique(render_pass_create_info);
+    //
+    // framebuffers.clear();
+    // for (auto &swapchain_image_view: swapchainColorImageViews) {
+    //     vk::FramebufferCreateInfo framebuffer_create_info = {
+    //         .renderPass = *renderPass,
+    //         .width = surfaceExtents.width,
+    //         .height = surfaceExtents.height,
+    //         .layers = 1
+    //     };
+    //     auto attachments = {*swapchain_image_view, *depthImageView};
+    //     framebuffer_create_info.setAttachments(attachments);
+    //     framebuffers.emplace_back(device->createFramebufferUnique(framebuffer_create_info));
+    // }
 }
 
 void GraphicsBackend::createSwapchain() {
@@ -364,10 +373,11 @@ void GraphicsBackend::createSwapchain() {
 
     swapchain = device->createSwapchainKHRUnique(swapchain_create_info);
 
-    auto swapchain_images = device->getSwapchainImagesKHR(*swapchain);
+    swapchainColorImages = device->getSwapchainImagesKHR(*swapchain);
+    swapchainColorImageFormat = surfaceFormat.format;
 
-    swapchainColorImages.clear();
-    for (auto swapchain_image: swapchain_images) {
+    swapchainColorImageViews.clear();
+    for (auto swapchain_image: swapchainColorImages) {
         vk::ImageViewCreateInfo image_view_create_info = {
             .image = swapchain_image,
             .viewType = vk::ImageViewType::e2D,
@@ -381,7 +391,7 @@ void GraphicsBackend::createSwapchain() {
                 .layerCount = 1
             }
         };
-        swapchainColorImages.emplace_back(std::move(device->createImageViewUnique(image_view_create_info)));
+        swapchainColorImageViews.emplace_back(std::move(device->createImageViewUnique(image_view_create_info)));
     }
 }
 
@@ -396,8 +406,8 @@ void GraphicsBackend::recreateSwapchain() {
 
     device->waitIdle();
 
-    framebuffers.clear();
-    swapchainColorImages.clear();
+    // framebuffers.clear();
+    swapchainColorImageViews.clear();
     swapchain.reset();
 
     createSwapchain();
