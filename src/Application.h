@@ -6,13 +6,13 @@
 #include "glfw/Context.h"
 #include "glfw/Window.h"
 
-class ShaderLoader;
+class ShaderLoader2;
 class GraphicsBackend;
 
 class Application {
 private:
     std::unique_ptr<GraphicsBackend> backend;
-    std::unique_ptr<ShaderLoader> loader;
+    std::unique_ptr<ShaderLoader2> loader;
     FrameResourceManager<2> frameResources;
 
 public:

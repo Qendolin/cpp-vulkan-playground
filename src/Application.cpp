@@ -2,7 +2,7 @@
 
 #include "GraphicsBackend.h"
 #include "Logger.h"
-#include "ShaderLoader.h"
+#include "ShaderObject.h"
 #include "gltf/Gltf.h"
 
 #include <glm/glm.hpp>
@@ -19,47 +19,6 @@ Application::Application() {
 }
 
 Application::~Application() = default;
-
-struct Vertex {
-    glm::vec3 pos;
-    glm::vec3 color;
-    glm::vec2 texCoord;
-
-    static constexpr auto bindingDescriptors() {
-        constexpr std::array desc{
-            vk::VertexInputBindingDescription{
-                .binding = 0,
-                .stride = sizeof(Vertex),
-                .inputRate = vk::VertexInputRate::eVertex
-            }
-        };
-        return desc;
-    }
-
-    static constexpr auto attributeDescriptors() {
-        constexpr std::array desc{
-            vk::VertexInputAttributeDescription{
-                .location = 0,
-                .binding = 0,
-                .format = vk::Format::eR32G32B32Sfloat,
-                .offset = offsetof(Vertex, pos)
-            },
-            vk::VertexInputAttributeDescription{
-                .location = 1,
-                .binding = 0,
-                .format = vk::Format::eR32G32B32Sfloat,
-                .offset = offsetof(Vertex, color)
-            },
-            vk::VertexInputAttributeDescription{
-                .location = 2,
-                .binding = 0,
-                .format = vk::Format::eR32G32Sfloat,
-                .offset = offsetof(Vertex, texCoord)
-            }
-        };
-        return desc;
-    }
-};
 
 struct Uniforms {
     alignas(16) glm::mat4 model;
@@ -198,16 +157,8 @@ void Application::run() {
         .descriptorCount = 1,
         .stageFlags = vk::ShaderStageFlagBits::eVertex,
     };
-    vk::DescriptorSetLayoutBinding sampler_binding = {
-        .binding = 1,
-        .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-        .descriptorCount = 1,
-        .stageFlags = vk::ShaderStageFlagBits::eFragment,
-    };
-
-    auto bindings = {uniform_binding, sampler_binding};
     vk::UniqueDescriptorSetLayout uniform_layout = backend->device->createDescriptorSetLayoutUnique(
-        vk::DescriptorSetLayoutCreateInfo().setBindings(bindings)
+        vk::DescriptorSetLayoutCreateInfo().setBindings(uniform_binding)
     );
 
     std::initializer_list<vk::DescriptorPoolSize> uniform_pool_sizes = {
@@ -215,10 +166,6 @@ void Application::run() {
             .type = vk::DescriptorType::eUniformBuffer,
             .descriptorCount = static_cast<uint32_t>(frameResources.size())
         },
-        {
-            .type = vk::DescriptorType::eCombinedImageSampler,
-            .descriptorCount = static_cast<uint32_t>(frameResources.size())
-        }
     };
 
     vk::UniqueDescriptorPool descriptor_pool = device->createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo{
@@ -240,11 +187,6 @@ void Application::run() {
             .offset = 0,
             .range = sizeof(Uniforms)
         };
-        vk::DescriptorImageInfo image_sampler_info = {
-            .sampler = *sampler,
-            .imageView = *texture_views.at(0),
-            .imageLayout = vk::ImageLayout::eReadOnlyOptimal
-        };
         auto descriptor_write = {
             vk::WriteDescriptorSet{
                 .dstSet = descriptor_sets.get(i),
@@ -253,31 +195,22 @@ void Application::run() {
                 .descriptorType = vk::DescriptorType::eUniformBuffer,
                 .pBufferInfo = &uniform_buffer_info,
             },
-            vk::WriteDescriptorSet{
-                .dstSet = descriptor_sets.get(i),
-                .dstBinding = 1,
-                .descriptorCount = 1,
-                .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-                .pImageInfo = &image_sampler_info,
-            }
         };
         device->updateDescriptorSets(descriptor_write, nullptr);
     }
 
-    loader = std::make_unique<ShaderLoader>(backend->device);
+    loader = std::make_unique<ShaderLoader2>();
 #ifndef NDEBUG
     loader->debug = true;
 #endif
     auto vert_sh = loader->load("assets/test.vert");
     auto frag_sh = loader->load("assets/test.frag");
+
+    std::array descriptor_set_layouts = {*uniform_layout, material_descriptor_layout.get()};
     vk::PushConstantRange push_constant_range = {.stageFlags = vk::ShaderStageFlagBits::eVertex, .offset = 0, .size = sizeof(glm::mat4)};
-    auto [pipeline_layout, pipeline] = loader->link(
-        std::array{backend->swapchainColorImageFormat}, backend->depthImageFormat,
-        {vert_sh, frag_sh},
-        gltf::Vertex::bindingDescriptors(), gltf::Vertex::attributeDescriptors(),
-        std::array{*uniform_layout, material_descriptor_layout.get()},
-        std::array{push_constant_range},
-        {});
+    std::array push_constant_ranges = {push_constant_range};
+
+    auto shader = Shader(*backend->device, {vert_sh, frag_sh}, descriptor_set_layouts, push_constant_ranges);
 
     const auto create_semaphore = [device] { return device->createSemaphoreUnique(vk::SemaphoreCreateInfo{}); };
     auto image_available_semaphores = frameResources.create(create_semaphore);
@@ -336,20 +269,6 @@ void Application::run() {
         command_buffer.reset();
         command_buffer.begin(vk::CommandBufferBeginInfo{});
 
-        // auto clear_vales = {
-        //     vk::ClearValue{.color = {{{0.0f, 0.0f, 0.0f, 1.0f}}}},
-        //     vk::ClearValue{.depthStencil = {1.0f, 0}}
-        // };
-        // vk::RenderPassBeginInfo render_pass_begin_info = {
-        //     .renderPass = *backend->renderPass,
-        //     .framebuffer = *backend->framebuffers[swapchain_image_index],
-        //     .renderArea = {
-        //         .offset = {},
-        //         .extent = backend->surfaceExtents
-        //     },
-        // };
-        // render_pass_begin_info.setClearValues(clear_vales);
-
         vk::ImageMemoryBarrier2 color_attachment_attachment_barrier{
             .srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
             .dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
@@ -406,41 +325,36 @@ void Application::run() {
             .pDepthAttachment = &depth_attachment_info
         };
         command_buffer.beginRenderingKHR(redering_info);
+        command_buffer.bindShadersEXT(shader.stages(), shader.shaders());
 
-        // command_buffer.beginRenderPass(render_pass_begin_info, vk::SubpassContents::eInline);
-
-        command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
-
-        // https://www.saschawillems.de/blog/2019/03/29/flipping-the-vulkan-viewport/
-        command_buffer.setViewport(0, {
-                                       {
-                                           0.0f, static_cast<float>(backend->surfaceExtents.height),
-                                           static_cast<float>(backend->surfaceExtents.width),
-                                           -static_cast<float>(backend->surfaceExtents.height),
-                                           0.0f, 1.0f
-                                       }
-                                   });
-
-        command_buffer.setScissor(0, {{{}, backend->surfaceExtents}});
-        command_buffer.setCullMode(vk::CullModeFlagBits::eBack);
-        command_buffer.setDepthTestEnable(true);
-        command_buffer.setDepthWriteEnable(true);
-        command_buffer.setDepthCompareOp(vk::CompareOp::eLess);
-        command_buffer.setStencilTestEnable(false);
-        command_buffer.setStencilOp(vk::StencilFaceFlagBits::eFrontAndBack, vk::StencilOp::eKeep, vk::StencilOp::eKeep,
-                                    vk::StencilOp::eKeep, vk::CompareOp::eNever);
+        PipelineConfig pipeline_config = {
+            .vertexBindingDescriptions = gltf::Vertex::bindingDescriptors(),
+            .vertexAttributeDescriptions = gltf::Vertex::attributeDescriptors(),
+            .viewports = {
+                {
+                    vk::Viewport{
+                        0.0f, static_cast<float>(backend->surfaceExtents.height),
+                        static_cast<float>(backend->surfaceExtents.width),
+                        -static_cast<float>(backend->surfaceExtents.height),
+                        0.0f, 1.0f
+                    }
+                }
+            },
+            .scissors = {{vk::Rect2D{{}, backend->surfaceExtents}}},
+        };
+        pipeline_config.apply(command_buffer, shader.stageFlags());
 
         command_buffer.bindVertexBuffers(0, {*position_buf, *normal_buf, *texcoord_buf}, {0, 0, 0});
         command_buffer.bindIndexBuffer(*index_buf, 0, vk::IndexType::eUint32);
-        command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipeline_layout, 0, descriptor_sets.get(), {});
+        command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, shader.pipelineLayout(), 0, descriptor_sets.get(), {});
 
         for (const auto &instance: gltf_data.instances) {
-            command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipeline_layout, 1, material_descriptors[instance.material.index].get(), {});
+            command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, shader.pipelineLayout(), 1, material_descriptors[instance.material.index].get(),
+                                              {});
 
-            command_buffer.pushConstants(*pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &instance.transformation);
+            command_buffer.pushConstants(shader.pipelineLayout(), vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &instance.transformation);
             command_buffer.drawIndexed(instance.indexCount, 1, instance.indexOffset, instance.vertexOffset, 0);
         }
-        // command_buffer.endRenderPass();
         command_buffer.endRendering();
 
         vk::ImageMemoryBarrier2 color_attachment_present_barrier{

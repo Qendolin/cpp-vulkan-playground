@@ -69,12 +69,12 @@ public:
     vk::UniqueSwapchainKHR swapchain;
     std::vector<vk::Image> swapchainColorImages;
     std::vector<vk::UniqueImageView> swapchainColorImageViews;
-    vk::Format swapchainColorImageFormat;
+    vk::Format swapchainColorImageFormat = vk::Format::eUndefined;
 
     vma::UniqueImage depthImage;
     vma::UniqueAllocation depthImageAllocation;
     vk::UniqueImageView depthImageView;
-    vk::Format depthImageFormat;
+    vk::Format depthImageFormat = vk::Format::eUndefined;
 
 private:
     vma::UniqueAllocation stagingAllocation;

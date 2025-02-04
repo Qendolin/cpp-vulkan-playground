@@ -26,20 +26,23 @@ namespace gltf {
 
         static constexpr auto bindingDescriptors() {
             constexpr std::array desc{
-                vk::VertexInputBindingDescription{
+                vk::VertexInputBindingDescription2EXT{
                     .binding = 0,
                     .stride = sizeof(Vertex::pos),
-                    .inputRate = vk::VertexInputRate::eVertex
+                    .inputRate = vk::VertexInputRate::eVertex,
+                    .divisor = 1
                 },
-                vk::VertexInputBindingDescription{
+                vk::VertexInputBindingDescription2EXT{
                     .binding = 1,
                     .stride = sizeof(Vertex::normal),
-                    .inputRate = vk::VertexInputRate::eVertex
+                    .inputRate = vk::VertexInputRate::eVertex,
+                    .divisor = 1
                 },
-                vk::VertexInputBindingDescription{
+                vk::VertexInputBindingDescription2EXT{
                     .binding = 2,
                     .stride = sizeof(Vertex::texCoord),
-                    .inputRate = vk::VertexInputRate::eVertex
+                    .inputRate = vk::VertexInputRate::eVertex,
+                    .divisor = 1
                 }
             };
             return desc;
@@ -48,19 +51,19 @@ namespace gltf {
         static constexpr auto attributeDescriptors() {
             // no offsets because they are not interleaved
             constexpr std::array desc{
-                vk::VertexInputAttributeDescription{
+                vk::VertexInputAttributeDescription2EXT{
                     .location = 0,
                     .binding = 0,
                     .format = vk::Format::eR32G32B32Sfloat,
                     .offset = 0,
                 },
-                vk::VertexInputAttributeDescription{
+                vk::VertexInputAttributeDescription2EXT{
                     .location = 1,
                     .binding = 1,
                     .format = vk::Format::eR32G32B32Sfloat,
                     .offset = 0,
                 },
-                vk::VertexInputAttributeDescription{
+                vk::VertexInputAttributeDescription2EXT{
                     .location = 2,
                     .binding = 2,
                     .format = vk::Format::eR32G32Sfloat,

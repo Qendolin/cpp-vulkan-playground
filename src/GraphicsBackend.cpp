@@ -102,7 +102,9 @@ GraphicsBackend::GraphicsBackend() {
 
     surface = window->createWindowSurfaceKHRUnique(*instance);
 
-    std::array required_device_extensions = {vk::KHRSwapchainExtensionName, vk::EXTMemoryBudgetExtensionName, vk::KHRDynamicRenderingExtensionName};
+    std::array required_device_extensions = {
+        vk::KHRSwapchainExtensionName, vk::EXTMemoryBudgetExtensionName, vk::KHRDynamicRenderingExtensionName, vk::EXTShaderObjectExtensionName
+    };
     for (auto device: instance->enumeratePhysicalDevices()) {
         auto device_properties = device.getProperties();
         if (device_properties.deviceType != vk::PhysicalDeviceType::eDiscreteGpu)
@@ -159,30 +161,24 @@ GraphicsBackend::GraphicsBackend() {
     };
 
     vk::PhysicalDeviceFeatures device_features = {
-        .samplerAnisotropy = true
+        .depthClamp = true,
+        .samplerAnisotropy = true,
     };
 
-
-    vk::DeviceCreateInfo device_create_info = {
-        .queueCreateInfoCount = queue_create_infos.size(),
-        .pQueueCreateInfos = queue_create_infos.data(),
-        .enabledExtensionCount = required_device_extensions.size(),
-        .ppEnabledExtensionNames = required_device_extensions.data(),
-        .pEnabledFeatures = &device_features,
+    vk::StructureChain device_create_info = {
+        vk::DeviceCreateInfo{
+            .queueCreateInfoCount = queue_create_infos.size(),
+            .pQueueCreateInfos = queue_create_infos.data(),
+            .enabledExtensionCount = required_device_extensions.size(),
+            .ppEnabledExtensionNames = required_device_extensions.data(),
+            .pEnabledFeatures = &device_features,
+        },
+        vk::PhysicalDeviceSynchronization2Features{.synchronization2 = true},
+        vk::PhysicalDeviceDynamicRenderingFeaturesKHR{.dynamicRendering = true},
+        vk::PhysicalDeviceShaderObjectFeaturesEXT{.shaderObject = true},
     };
 
-    vk::PhysicalDeviceSynchronization2Features sync_features = {
-        .synchronization2 = true,
-    };
-    device_create_info.pNext = &sync_features;
-
-    vk::PhysicalDeviceDynamicRenderingFeaturesKHR dynamic_rendering_feature{
-        .dynamicRendering = true,
-    };
-    sync_features.pNext = &dynamic_rendering_feature;
-
-
-    device = vk::SharedDevice(phyicalDevice.createDevice(device_create_info));
+    device = vk::SharedDevice(phyicalDevice.createDevice(device_create_info.get<vk::DeviceCreateInfo>()));
     graphicsQueue = device->getQueue(graphicsQueueIndex, 0);
 
     vma::VulkanFunctions vma_vulkan_functions = {
