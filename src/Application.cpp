@@ -13,8 +13,6 @@
 
 Application::Application() {
     backend = std::make_unique<GraphicsBackend>();
-    backend->createSwapchain();
-    backend->createRenderPass();
     backend->createCommandBuffers(frameResources.size());
 }
 
@@ -26,12 +24,10 @@ struct Uniforms {
     alignas(16) glm::mat4 proj;
 };
 
-static bool framebufferResized = false;
-
-static void framebufferResizeCallback(GLFWwindow *window, int width, int height) {
-    framebufferResized = true;
-    Logger::warning("Swapchain needs recreation: framebuffer resized");
-}
+// static void framebufferResizeCallback(GLFWwindow *window, int width, int height) {
+//     framebufferResized = true;
+//     Logger::warning("Swapchain needs recreation: framebuffer resized");
+// }
 
 using MaterialDescriptorLayout = DescriptorSetLayout<
     DescriptorBinding<0, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment>, // albedo
@@ -220,7 +216,9 @@ void Application::run() {
     };
     auto in_flight_fences = frameResources.create(create_signaled_fence);
 
-    glfwSetFramebufferSizeCallback(*backend->window, framebufferResizeCallback);
+    auto swapchain = Swapchain(*backend->allocator, backend->phyicalDevice, *backend->device, *backend->window, *backend->surface);
+
+    // glfwSetFramebufferSizeCallback(*backend->window, framebufferResizeCallback);
 
     while (!backend->window->shouldClose()) {
         frameResources.advance();
@@ -233,7 +231,7 @@ void Application::run() {
         auto render_finished_semaphore = render_finished_semaphores.get();
 
         float time = static_cast<float>(glfwGetTime());
-        float aspect_ratio = static_cast<float>(backend->surfaceExtents.width) / static_cast<float>(backend->surfaceExtents.height);
+        float aspect_ratio = swapchain.width() / swapchain.height();
         Uniforms uniforms = {
             .model = glm::mat4(1.0), // deprecated
             .view = glm::lookAt(glm::vec3(glm::cos(time * 0.3) * 8, 6.0f, glm::sin(time * 0.3) * 8), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f)),
@@ -242,23 +240,7 @@ void Application::run() {
 
         std::memcpy(uniform_buffers.get().pointer, &uniforms, sizeof(uniforms));
 
-        uint32_t swapchain_image_index = 0;
-        bool recreate_swapchain = false;
-        try {
-            auto image_acquistion_result = device->acquireNextImageKHR(*backend->swapchain, UINT64_MAX,
-                                                                       image_available_semaphore, nullptr);
-            if (image_acquistion_result.result == vk::Result::eSuboptimalKHR) {
-                Logger::warning("Swapchain may need recreation: VK_SUBOPTIMAL_KHR");
-                recreate_swapchain = true;
-            }
-            swapchain_image_index = image_acquistion_result.value;
-        } catch (const vk::OutOfDateKHRError &) {
-            Logger::warning("Swapchain needs recreation: VK_ERROR_OUT_OF_DATE_KHR");
-            recreate_swapchain = true;
-        }
-
-        if (recreate_swapchain) {
-            backend->recreateSwapchain();
+        if (!swapchain.next(image_available_semaphore)) {
             continue;
         }
 
@@ -275,7 +257,7 @@ void Application::run() {
             .dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
             .oldLayout = vk::ImageLayout::eUndefined,
             .newLayout = vk::ImageLayout::eAttachmentOptimal,
-            .image = backend->swapchainColorImages[swapchain_image_index],
+            .image = swapchain.colorImage(),
             .subresourceRange = {
                 .aspectMask = vk::ImageAspectFlagBits::eColor,
                 .levelCount = 1,
@@ -288,7 +270,7 @@ void Application::run() {
             .dstAccessMask = vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
             .oldLayout = vk::ImageLayout::eUndefined,
             .newLayout = vk::ImageLayout::eAttachmentOptimal,
-            .image = *backend->depthImage,
+            .image = swapchain.depthImage(),
             .subresourceRange = {
                 .aspectMask = vk::ImageAspectFlagBits::eDepth,
                 .levelCount = 1,
@@ -303,22 +285,19 @@ void Application::run() {
         });
 
         vk::RenderingAttachmentInfoKHR color_attachment_info{
-            .imageView = *backend->swapchainColorImageViews[swapchain_image_index],
+            .imageView = swapchain.colorView(),
             .imageLayout = vk::ImageLayout::eAttachmentOptimal,
             .loadOp = vk::AttachmentLoadOp::eClear,
             .clearValue = {.color = {.float32 = std::array{0.0f, 0.0f, 0.0f, 1.0f}}}
         };
         vk::RenderingAttachmentInfoKHR depth_attachment_info{
-            .imageView = *backend->depthImageView,
+            .imageView = swapchain.depthView(),
             .imageLayout = vk::ImageLayout::eAttachmentOptimal,
             .loadOp = vk::AttachmentLoadOp::eClear,
             .clearValue = {.depthStencil = {1.0f, 0}}
         };
         vk::RenderingInfoKHR redering_info = {
-            .renderArea = {
-                .offset = {},
-                .extent = backend->surfaceExtents,
-            },
+            .renderArea = swapchain.area(),
             .layerCount = 1,
             .colorAttachmentCount = 1,
             .pColorAttachments = &color_attachment_info,
@@ -333,14 +312,13 @@ void Application::run() {
             .viewports = {
                 {
                     vk::Viewport{
-                        0.0f, static_cast<float>(backend->surfaceExtents.height),
-                        static_cast<float>(backend->surfaceExtents.width),
-                        -static_cast<float>(backend->surfaceExtents.height),
+                        0.0f, swapchain.height(),
+                        swapchain.width(), -swapchain.height(),
                         0.0f, 1.0f
                     }
                 }
             },
-            .scissors = {{vk::Rect2D{{}, backend->surfaceExtents}}},
+            .scissors = {{swapchain.area()}},
         };
         pipeline_config.apply(command_buffer, shader.stageFlags());
 
@@ -363,7 +341,7 @@ void Application::run() {
             .dstStageMask = vk::PipelineStageFlagBits2::eBottomOfPipe,
             .oldLayout = vk::ImageLayout::eAttachmentOptimal,
             .newLayout = vk::ImageLayout::ePresentSrcKHR,
-            .image = backend->swapchainColorImages[swapchain_image_index],
+            .image = swapchain.colorImage(),
             .subresourceRange = {
                 .aspectMask = vk::ImageAspectFlagBits::eColor,
                 .levelCount = 1,
@@ -378,7 +356,7 @@ void Application::run() {
 
         command_buffer.end();
 
-        vk::PipelineStageFlags constexpr pipe_stage_flags = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+        vk::PipelineStageFlags pipe_stage_flags = vk::PipelineStageFlagBits::eColorAttachmentOutput;
         vk::SubmitInfo submit_info = vk::SubmitInfo()
                 .setCommandBuffers(command_buffer)
                 .setWaitSemaphores(image_available_semaphore)
@@ -386,27 +364,7 @@ void Application::run() {
                 .setSignalSemaphores(render_finished_semaphore);
         backend->graphicsQueue.submit({submit_info}, in_flight_fence);
 
-        vk::PresentInfoKHR present_info = vk::PresentInfoKHR()
-                .setWaitSemaphores(render_finished_semaphore)
-                .setSwapchains(*backend->swapchain)
-                .setImageIndices(swapchain_image_index);
-
-        recreate_swapchain = false;
-        try {
-            vk::Result result = backend->graphicsQueue.presentKHR(present_info);
-            if (result == vk::Result::eSuboptimalKHR) {
-                Logger::warning("Swapchain may need recreation: VK_SUBOPTIMAL_KHR");
-                recreate_swapchain = true;
-            }
-        } catch (const vk::OutOfDateKHRError &) {
-            Logger::warning("Swapchain needs recreation: VK_ERROR_OUT_OF_DATE_KHR");
-            recreate_swapchain = true;
-        }
-
-        if (recreate_swapchain || framebufferResized) {
-            framebufferResized = false;
-            backend->recreateSwapchain();
-        }
+        swapchain.present(backend->graphicsQueue, vk::PresentInfoKHR().setWaitSemaphores(render_finished_semaphore));
     }
 
     Logger::info("Exited main loop");
