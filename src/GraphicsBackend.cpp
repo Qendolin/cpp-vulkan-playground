@@ -193,23 +193,6 @@ GraphicsBackend::GraphicsBackend() {
         .instance = *instance,
         .vulkanApiVersion = application_info.apiVersion,
     });
-
-    stagingMappedMemorySize = 64000000; // 64 MB
-    vma::AllocationInfo staging_info = {};
-    auto [staging, staging_mem] = allocator->createBufferUnique(
-        {
-            .size = stagingMappedMemorySize,
-            .usage = vk::BufferUsageFlagBits::eTransferSrc,
-        },
-        {
-            .flags = vma::AllocationCreateFlagBits::eHostAccessSequentialWrite | vma::AllocationCreateFlagBits::eMapped,
-            .usage = vma::MemoryUsage::eAuto,
-            .requiredFlags = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
-        },
-        &staging_info);
-    this->stagingBuffer = std::move(staging);
-    this->stagingAllocation = std::move(staging_mem);
-    this->stagingMappedMemory = staging_info.pMappedData;
 }
 
 GraphicsBackend::~GraphicsBackend() = default;

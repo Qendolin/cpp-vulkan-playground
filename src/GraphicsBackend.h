@@ -33,6 +33,13 @@ public:
         return stage(data.data(), size);
     }
 
+    template<std::ranges::contiguous_range R>
+    void upload(vk::CommandBuffer cmd_buf, R &&data, vk::Buffer dst) {
+        using T = std::ranges::range_value_t<R>;
+        vk::Buffer staged = stage(std::forward<R>(data));
+        cmd_buf.copyBuffer(staged, dst, vk::BufferCopy{.size = data.size() * sizeof(T)});
+    }
+
     void releaseAll();
 
 private:
@@ -288,15 +295,7 @@ public:
     vk::UniqueCommandPool commandPool;
     std::vector<vk::UniqueCommandBuffer> commandBuffers;
 
-    // TODO: should move this up
     vma::UniqueAllocator allocator;
-
-    vma::UniqueBuffer stagingBuffer;
-
-private:
-    vma::UniqueAllocation stagingAllocation;
-    void *stagingMappedMemory;
-    vk::DeviceSize stagingMappedMemorySize;
 
 public:
     GraphicsBackend();
@@ -309,34 +308,4 @@ public:
 
     void submit(TransientCommandBuffer &cmd_buf, bool wait) const;
 
-    template<std::ranges::contiguous_range R>
-    void copyToStaging(R &&data) const {
-        using T = std::ranges::range_value_t<R>;
-        vk::DeviceSize size = data.size() * sizeof(T);
-        if (size > stagingMappedMemorySize) {
-            throw std::exception("buffer to big for staging");
-        }
-        std::memcpy(stagingMappedMemory, data.data(), size);
-    }
-
-    template<std::ranges::contiguous_range R>
-    void uploadWithStaging(R &&data, vk::Buffer &dst) const {
-        using T = std::ranges::range_value_t<R>;
-
-        vk::DeviceSize size = data.size() * sizeof(T);
-
-        vk::DeviceSize offset = 0;
-        vk::DeviceSize left = size;
-
-        while (left > 0) {
-            vk::DeviceSize block_size = std::min(size, stagingMappedMemorySize);
-            std::memcpy(stagingMappedMemory, data.data() + offset, block_size);
-
-            TransientCommandBuffer cmd_buf = createTransientCommandBuffer();
-            cmd_buf->copyBuffer(*stagingBuffer, dst, vk::BufferCopy{.dstOffset = offset, .size = size});
-            submit(cmd_buf, true);
-
-            left -= std::min(left, block_size);
-        }
-    }
 };

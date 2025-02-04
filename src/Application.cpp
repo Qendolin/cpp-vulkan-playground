@@ -116,11 +116,13 @@ void Application::run() {
                                                                             .usage = vk::BufferUsageFlagBits::eIndexBuffer |
                                                                                      vk::BufferUsageFlagBits::eTransferDst
                                                                         }, allocation_create_info);
-
-    backend->uploadWithStaging(gltf_data.vertex_position_data, *position_buf);
-    backend->uploadWithStaging(gltf_data.vertex_normal_data, *normal_buf);
-    backend->uploadWithStaging(gltf_data.vertex_texcoord_data, *texcoord_buf);
-    backend->uploadWithStaging(gltf_data.index_data, *index_buf);
+    auto staging_cmd_buf = backend->createTransientCommandBuffer();
+    staging_uploader.upload(*staging_cmd_buf, gltf_data.vertex_position_data, *position_buf);
+    staging_uploader.upload(*staging_cmd_buf, gltf_data.vertex_normal_data, *normal_buf);
+    staging_uploader.upload(*staging_cmd_buf, gltf_data.vertex_texcoord_data, *texcoord_buf);
+    staging_uploader.upload(*staging_cmd_buf, gltf_data.index_data, *index_buf);
+    backend->submit(staging_cmd_buf, true);
+    staging_uploader.releaseAll();
 
     auto uniform_buffers = frameResources.create([this] {
         vma::AllocationInfo ub_alloc_info = {};
