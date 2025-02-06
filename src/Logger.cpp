@@ -67,12 +67,6 @@ void Logger::check(bool be_true, std::string_view message, std::source_location 
             << message << std::endl;
 }
 
-__attribute__((noinline)) void Logger::panic(std::string_view message, const cpptrace::stacktrace &trace) {
-    // don't know why but trace.to_string fives a linker error on linux
-    std::ostringstream oss;
-    trace.print(oss, true);
-    const std::string string = oss.str();
-    std::string_view sv = string;
-    if (sv.ends_with("\n")) sv.remove_suffix(1);
-    throw std::runtime_error(std::format("PANIC: {}\n{}", message, sv));
+void Logger::panic(std::string_view message, const cpptrace::stacktrace &trace) {
+    throw std::runtime_error(std::format("PANIC: {}\n{}", message, trace.to_string(true)));
 }
