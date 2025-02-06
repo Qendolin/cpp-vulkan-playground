@@ -1,8 +1,22 @@
 cmake_minimum_required(VERSION 3.28)
 project(cpp_vulkan_playground)
 
+# In CLion reloading cmake profiles in parallel can cause issues with the vcpkg lock.
+# Make sure to enable the Reload CMake profiles sequentially option in Settings | Advanced Settings | CMake.
+
+set(CMAKE_VERBOSE_MAKEFILE ON)
+
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+message("Using compiler '${CMAKE_CXX_COMPILER_ID}'")
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0)
+    #    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++ -std=c++23")
+    #    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++ -L/usr/lib/llvm-19/lib/ -lc++ -lc++abi")
+    #    set(VCPKG_CXX_FLAGS "${VCPKG_CXX_FLAGS} -stdlib=libc++")
+    #    set(VCPKG_LINKER_FLAGS "${VCPKG_LINKER_FLAGS} -stdlib=libc++")
+endif ()
 
 find_package(VulkanHeaders REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
@@ -14,6 +28,8 @@ find_package(Stb REQUIRED)
 find_package(tinyobjloader CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(VulkanUtilityLibraries CONFIG REQUIRED)
+set(CPPTRACE_BUILD_SHARED OFF)
+find_package(cpptrace CONFIG REQUIRED)
 
 file(GLOB_RECURSE sources CONFIGURE_DEPENDS "src/*.cpp")
 file(GLOB_RECURSE headers CONFIGURE_DEPENDS "src/*.h")
@@ -31,3 +47,10 @@ target_include_directories(cpp_vulkan_playground PRIVATE ${Stb_INCLUDE_DIR})
 target_link_libraries(cpp_vulkan_playground PRIVATE tinyobjloader::tinyobjloader)
 target_link_libraries(cpp_vulkan_playground PRIVATE nlohmann_json::nlohmann_json)
 target_link_libraries(cpp_vulkan_playground PRIVATE Vulkan::UtilityHeaders) # Unused-> Vulkan::SafeStruct Vulkan::LayerSettings  Vulkan::CompilerConfiguration
+target_link_libraries(cpp_vulkan_playground PRIVATE cpptrace::cpptrace)
+#if(WIN32)
+#    add_custom_command(
+#            TARGET cpp_vulkan_playground POST_BUILD
+#            COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:cpptrace::cpptrace> $<TARGET_FILE_DIR:cpp_vulkan_playground>
+#    )
+#endif()

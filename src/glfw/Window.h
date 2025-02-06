@@ -75,7 +75,15 @@ namespace glfw {
         explicit Window(const WindowCreateInfo &create_info, GLFWmonitor *monitor = nullptr,
                         GLFWwindow *share = nullptr);
 
-        ~Window();
+        explicit Window(GLFWwindow *handle)
+            : handle(handle) {
+        }
+
+        Window() = default;
+
+        Window(const Window &other) = default;
+
+        Window &operator=(const Window &other) = default;
 
         [[nodiscard]] bool shouldClose() const;
 
@@ -83,9 +91,72 @@ namespace glfw {
 
         vk::UniqueSurfaceKHR createWindowSurfaceKHRUnique(vk::Instance instance);
 
-        operator GLFWwindow *() const {
-            // NOLINT(*-explicit-constructor)
+        explicit operator GLFWwindow *() const {
             return handle;
         }
+    };
+
+    class UniqueWindow {
+        Window window = {};
+
+    public:
+        explicit UniqueWindow(const WindowCreateInfo &create_info, GLFWmonitor *monitor = nullptr, GLFWwindow *share = nullptr)
+            : window(create_info, monitor, share) {
+        }
+
+        explicit UniqueWindow(GLFWwindow *handle)
+            : window(handle) {
+        }
+
+        UniqueWindow() = default;
+
+        UniqueWindow(const UniqueWindow &) = delete;
+
+        UniqueWindow &operator=(const UniqueWindow &) = delete;
+
+        UniqueWindow(UniqueWindow &&other) noexcept
+            : window(std::exchange(other.window, Window{})) {
+        }
+
+        UniqueWindow &operator=(UniqueWindow &&other) noexcept {
+            if (this != &other) {
+                reset();
+                window = std::exchange(other.window, Window{});
+            }
+            return *this;
+        }
+
+        const Window *operator->() const noexcept {
+            return &window;
+        }
+
+        Window *operator->() noexcept {
+            return &window;
+        }
+
+        const Window &operator*() const noexcept {
+            return window;
+        }
+
+        Window &operator*() noexcept {
+            return window;
+        }
+
+        ~UniqueWindow() {
+            reset();
+        }
+
+        void reset() noexcept {
+            if (auto *handle = static_cast<GLFWwindow *>(window)) {
+                glfwDestroyWindow(handle);
+                window = Window{};
+            }
+        }
+
+        [[nodiscard]] Window &get() noexcept { return window; }
+
+        [[nodiscard]] const Window& get() const noexcept { return window; }
+
+        explicit operator GLFWwindow *() const { return static_cast<GLFWwindow *>(window); }
     };
 }

@@ -51,7 +51,7 @@ class Swapchain {
     vma::Allocator allocator;
     vk::PhysicalDevice physicalDevice;
     vk::Device device;
-    glfw::Window &window;
+    glfw::Window window;
     vk::SurfaceKHR surface;
 
     vk::SurfaceFormatKHR surfaceFormat = {.format = vk::Format::eUndefined, .colorSpace = vk::ColorSpaceKHR::eSrgbNonlinear};
@@ -69,7 +69,7 @@ class Swapchain {
     bool invalid = true;
 
 public:
-    Swapchain(vma::Allocator allocator, vk::PhysicalDevice physical_device, vk::Device device, glfw::Window &window, vk::SurfaceKHR surface)
+    Swapchain(vma::Allocator allocator, vk::PhysicalDevice physical_device, vk::Device device, glfw::Window window, vk::SurfaceKHR surface)
         : allocator(allocator), physicalDevice(physical_device), device(device), window(window), surface(surface) {
         create();
     }
@@ -135,6 +135,7 @@ public:
         auto swapchain_image_count = surface_capabilities.maxImageCount + 1;
         if (surface_capabilities.maxImageCount > 0 && swapchain_image_count > surface_capabilities.maxImageCount)
             swapchain_image_count = surface_capabilities.maxImageCount;
+        swapchain_image_count = std::max(swapchain_image_count, surface_capabilities.minImageCount);
 
         surfaceExtents = window.getFramebufferSize();
         surfaceExtents.width = std::clamp(surfaceExtents.width, surface_capabilities.minImageExtent.width,
@@ -216,10 +217,10 @@ public:
     void recreate() {
         // wait if window is minimized
         int width = 0, height = 0;
-        glfwGetFramebufferSize(window, &width, &height);
+        glfwGetFramebufferSize(static_cast<GLFWwindow *>(window), &width, &height);
         while (width == 0 || height == 0) {
             glfwWaitEvents();
-            glfwGetFramebufferSize(window, &width, &height);
+            glfwGetFramebufferSize(static_cast<GLFWwindow *>(window), &width, &height);
         }
         device.waitIdle();
 
@@ -280,8 +281,8 @@ public:
 
 class GraphicsBackend {
 public:
-    std::unique_ptr<glfw::Context> glfw;
-    std::unique_ptr<glfw::Window> window;
+    glfw::Context glfw;
+    glfw::UniqueWindow window;
     vk::UniqueInstance instance;
 
     vk::UniqueDebugUtilsMessengerEXT debugMessenger;

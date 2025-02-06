@@ -28,9 +28,9 @@ namespace glfw {
         isInitialized = false;
     }
 
-    std::vector<const char *> Context::getRequiredInstanceExtensions() const {
+    std::vector<const char *> Context::getRequiredInstanceExtensions() {
         uint32_t count;
         const char **extensions = glfwGetRequiredInstanceExtensions(&count);
-        return std::vector(extensions, extensions + count);
+        return {extensions, extensions + count};
     }
 }

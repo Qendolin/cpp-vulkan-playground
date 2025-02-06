@@ -48,8 +48,7 @@ void StagingUploader::releaseAll() {
 }
 
 GraphicsBackend::GraphicsBackend() {
-    glfw = std::make_unique<glfw::Context>();
-    window = std::make_unique<glfw::Window>(glfw::WindowCreateInfo{
+    window = glfw::UniqueWindow(glfw::WindowCreateInfo{
         .width = 800,
         .height = 800,
         .title = "Vulkan window",
@@ -71,15 +70,21 @@ GraphicsBackend::GraphicsBackend() {
         .pApplicationInfo = &application_info,
     };
 
-    std::vector required_extensions = glfw->getRequiredInstanceExtensions();
+    std::vector required_extensions = glfw::Context::getRequiredInstanceExtensions();
     required_extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     instance_create_info.enabledExtensionCount = required_extensions.size();
     instance_create_info.ppEnabledExtensionNames = required_extensions.data();
 
-    std::array enabled_layers = {"VK_LAYER_KHRONOS_validation", "VK_LAYER_KHRONOS_synchronization2"};
+    // std::array enabled_layers = {"VK_LAYER_KHRONOS_validation", "VK_LAYER_KHRONOS_synchronization2"};
+    std::array enabled_layers = {"VK_LAYER_KHRONOS_validation"};
 
     instance_create_info.enabledLayerCount = enabled_layers.size();
     instance_create_info.ppEnabledLayerNames = enabled_layers.data();
+
+    Logger::info("Available Layers:");
+    for (auto layer_property : vk::enumerateInstanceLayerProperties()) {
+        Logger::info(std::format("- {}: {}", std::string(layer_property.layerName.data()), std::string(layer_property.description.data())));
+    }
 
     instance = vk::createInstanceUnique(instance_create_info);
 
@@ -105,10 +110,11 @@ GraphicsBackend::GraphicsBackend() {
     std::array required_device_extensions = {
         vk::KHRSwapchainExtensionName, vk::EXTMemoryBudgetExtensionName, vk::KHRDynamicRenderingExtensionName, vk::EXTShaderObjectExtensionName
     };
-    for (auto device: instance->enumeratePhysicalDevices()) {
+
+    int best_device_score = -1;
+    for (auto device : instance->enumeratePhysicalDevices()) {
+        int score = 0;
         auto device_properties = device.getProperties();
-        if (device_properties.deviceType != vk::PhysicalDeviceType::eDiscreteGpu)
-            continue;
 
         bool missing_required_extension = false;
         auto device_extensions = device.enumerateDeviceExtensionProperties();
@@ -124,12 +130,18 @@ GraphicsBackend::GraphicsBackend() {
         if (missing_required_extension)
             continue;
 
+        if (device_properties.deviceType == vk::PhysicalDeviceType::eDiscreteGpu)
+            score += 1000;
+
         vk::PhysicalDeviceFeatures features = device.getFeatures();
-        if (!features.samplerAnisotropy)
+        if (features.samplerAnisotropy)
+            score += 50;
+
+        if(score <= best_device_score)
             continue;
 
         uint32_t queue_index = -1;
-        for (auto queue_family_properties: device.getQueueFamilyProperties()) {
+        for (auto queue_family_properties : device.getQueueFamilyProperties()) {
             queue_index++;
 
             if (!(queue_family_properties.queueFlags & vk::QueueFlagBits::eGraphics))
@@ -139,13 +151,12 @@ GraphicsBackend::GraphicsBackend() {
 
             this->graphicsQueueIndex = queue_index;
             this->phyicalDevice = device;
-            break;
+            best_device_score = score;
         }
-        if (this->graphicsQueueIndex != -1)
-            break;
+
     }
 
-    if (this->phyicalDevice == nullptr)
+    if (!phyicalDevice)
         Logger::panic("No suitable GPU found");
 
     std::string device_name = this->phyicalDevice.getProperties().deviceName;

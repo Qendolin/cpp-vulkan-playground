@@ -10,20 +10,50 @@ class StagedUploadManager;
 class StagingBufferAllocator;
 class GraphicsBackend;
 
+class PlainImageData {
+    unsigned char *data;
 
-struct PlainImageData {
-    std::unique_ptr<unsigned char[], decltype(&std::free)> data = std::unique_ptr<unsigned char[], decltype(&std::free)>(nullptr, std::free);
+public:
+    uint32_t width;
+    uint32_t height;
     std::span<unsigned char> pixels;
-    uint32_t width, height;
     vk::Format format;
 
-    static PlainImageData create(vk::Format format, const std::filesystem::path& path);
-    static PlainImageData create(vk::Format format, int width, int height, int channels, const unsigned char* data);
+    PlainImageData() noexcept
+        : data(nullptr)
+          , width(0)
+          , height(0)
+          , pixels({})
+          , format(vk::Format::eUndefined) {
+    }
+
+    PlainImageData(unsigned char *data, uint32_t width, uint32_t height, std::span<unsigned char> pixels, vk::Format format) noexcept
+        : data(data)
+          , width(width)
+          , height(height)
+          , pixels(pixels)
+          , format(format) {
+    }
+
+    ~PlainImageData() noexcept;
+
+    PlainImageData(PlainImageData &&other) noexcept;
+
+    PlainImageData &operator=(PlainImageData &&other) noexcept;
+
+    PlainImageData(const PlainImageData &other) = delete;
+
+    PlainImageData &operator=(const PlainImageData &other) = delete;
 
     explicit operator bool() const {
         return static_cast<bool>(data);
     }
+
+    static PlainImageData create(vk::Format format, const std::filesystem::path &path);
+
+    static PlainImageData create(vk::Format format, int width, int height, int channels, const unsigned char *data);
 };
+
 
 struct TextureCreateInfo {
     vk::Format format = vk::Format::eUndefined;
@@ -36,7 +66,7 @@ struct TextureCreateInfo {
 
     TextureCreateInfo() = default;
 
-    explicit TextureCreateInfo(const PlainImageData & plain_image_data) {
+    explicit TextureCreateInfo(const PlainImageData &plain_image_data) {
         width = plain_image_data.width;
         height = plain_image_data.height;
         format = plain_image_data.format;
@@ -47,7 +77,7 @@ class Texture {
 public:
     Texture() = default;
 
-    Texture(vma::UniqueImage&& image, vma::UniqueAllocation&& allocation, const TextureCreateInfo& create_info);
+    Texture(vma::UniqueImage &&image, vma::UniqueAllocation &&allocation, const TextureCreateInfo &create_info);
 
     Texture(const Texture &other) = delete;
 
@@ -58,9 +88,9 @@ public:
           layout(other.layout) {
     }
 
-    Texture & operator=(const Texture &other) = delete;
+    Texture &operator=(const Texture &other) = delete;
 
-    Texture & operator=(Texture &&other) noexcept {
+    Texture &operator=(Texture &&other) noexcept {
         image = std::move(other.image);
         allocation = std::move(other.allocation);
         info = other.info;
@@ -68,18 +98,19 @@ public:
         return *this;
     }
 
-    static Texture create(const vma::Allocator& allocator, TextureCreateInfo create_info);
-    static Texture create(const vma::Allocator &allocator, const vk::CommandBuffer &cmd_buf, vk::Buffer staged_data, const TextureCreateInfo& create_info);
+    static Texture create(const vma::Allocator &allocator, TextureCreateInfo create_info);
 
-    void toTransferDstLayout(const vk::CommandBuffer& cmd_buf);
+    static Texture create(const vma::Allocator &allocator, const vk::CommandBuffer &cmd_buf, vk::Buffer staged_data, const TextureCreateInfo &create_info);
 
-    void toShaderReadOnlyLayout(const vk::CommandBuffer& cmd_buf);
+    void toTransferDstLayout(const vk::CommandBuffer &cmd_buf);
 
-    void load(const vk::CommandBuffer& cmd_buf, uint32_t level, vk::Extent3D region, const vk::Buffer& data);
+    void toShaderReadOnlyLayout(const vk::CommandBuffer &cmd_buf);
 
-    void generateMipmaps(const vk::CommandBuffer& cmd_buf);
+    void load(const vk::CommandBuffer &cmd_buf, uint32_t level, vk::Extent3D region, const vk::Buffer &data);
 
-    vk::UniqueImageView createDefaultView(const vk::Device& device);
+    void generateMipmaps(const vk::CommandBuffer &cmd_buf);
+
+    vk::UniqueImageView createDefaultView(const vk::Device &device);
 
 private:
     vma::UniqueImage image;

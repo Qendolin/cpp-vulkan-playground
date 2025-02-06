@@ -24,11 +24,6 @@ struct Uniforms {
     alignas(16) glm::mat4 proj;
 };
 
-// static void framebufferResizeCallback(GLFWwindow *window, int width, int height) {
-//     framebufferResized = true;
-//     Logger::warning("Swapchain needs recreation: framebuffer resized");
-// }
-
 using MaterialDescriptorLayout = DescriptorSetLayout<
     DescriptorBinding<0, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment>, // albedo
     DescriptorBinding<1, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment>, // normal
@@ -220,8 +215,6 @@ void Application::run() {
 
     auto swapchain = Swapchain(*backend->allocator, backend->phyicalDevice, *backend->device, *backend->window, *backend->surface);
 
-    // glfwSetFramebufferSizeCallback(*backend->window, framebufferResizeCallback);
-
     while (!backend->window->shouldClose()) {
         frameResources.advance();
         auto in_flight_fence = in_flight_fences.get();
@@ -232,7 +225,7 @@ void Application::run() {
         auto image_available_semaphore = image_available_semaphores.get();
         auto render_finished_semaphore = render_finished_semaphores.get();
 
-        float time = static_cast<float>(glfwGetTime());
+        auto time = static_cast<float>(glfwGetTime());
         float aspect_ratio = swapchain.width() / swapchain.height();
         Uniforms uniforms = {
             .model = glm::mat4(1.0), // deprecated
@@ -309,8 +302,8 @@ void Application::run() {
         command_buffer.bindShadersEXT(shader.stages(), shader.shaders());
 
         PipelineConfig pipeline_config = {
-            .vertexBindingDescriptions = gltf::Vertex::bindingDescriptors(),
-            .vertexAttributeDescriptions = gltf::Vertex::attributeDescriptors(),
+            .vertexBindingDescriptions = gltf::Vertex::bindingDescriptors,
+            .vertexAttributeDescriptions = gltf::Vertex::attributeDescriptors,
             .viewports = {
                 {
                     vk::Viewport{

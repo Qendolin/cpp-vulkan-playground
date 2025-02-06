@@ -1,5 +1,6 @@
 #include "Texture.h"
 
+#include <cmath>
 #include <filesystem>
 #include <ranges>
 #include <stb_image.h>
@@ -47,6 +48,31 @@ static void copy_pixels(const unsigned char *src, int src_channels, unsigned cha
     jmp[index](src, dst, elements);
 }
 
+PlainImageData::~PlainImageData() noexcept {
+    std::free(std::exchange(data, nullptr));
+}
+
+PlainImageData::PlainImageData(PlainImageData &&other) noexcept
+    : data(std::exchange(other.data, nullptr)),
+      width(std::exchange(other.width, 0)),
+      height(std::exchange(other.height, 0)),
+      pixels(std::exchange(other.pixels, {})),
+      format(std::exchange(other.format, vk::Format::eUndefined)) {
+}
+
+PlainImageData &PlainImageData::operator=(PlainImageData &&other) noexcept {
+    if (this == &other)
+        return *this;
+
+    std::free(data);
+    data = std::exchange(other.data, nullptr);
+    width = std::exchange(other.width, 0);
+    height = std::exchange(other.height, 0);
+    pixels = std::exchange(other.pixels, {});
+    format = std::exchange(other.format, vk::Format::eUndefined);
+    return *this;
+}
+
 PlainImageData PlainImageData::create(vk::Format format, int width, int height, int src_channels, const unsigned char *src_data) {
     int dst_channels = static_cast<int>(vkuFormatComponentCount(static_cast<VkFormat>(format)));
 
@@ -56,10 +82,10 @@ PlainImageData PlainImageData::create(vk::Format format, int width, int height, 
     copy_pixels(src_data, src_channels, dst_data, dst_channels, elements);
 
     return {
-        .data = std::unique_ptr<unsigned char[], decltype(&std::free)>(dst_data, std::free),
-        .pixels = std::span(dst_data, width * height * dst_channels),
-        .width = static_cast<uint32_t>(width), .height = static_cast<uint32_t>(height),
-        .format = format
+        dst_data,
+        static_cast<uint32_t>(width), static_cast<uint32_t>(height),
+        std::span(dst_data, width * height * dst_channels),
+        format
     };
 }
 
@@ -69,10 +95,10 @@ PlainImageData PlainImageData::create(vk::Format format, const std::filesystem::
     stbi_uc *pixels = stbi_load(path.string().c_str(), &width, &height, &channels, result_channels);
 
     return {
-        .data = std::unique_ptr<unsigned char[], decltype(&std::free)>(pixels, std::free),
-        .pixels = std::span(pixels, width * height * result_channels),
-        .width = static_cast<uint32_t>(width), .height = static_cast<uint32_t>(height),
-        .format = format
+        pixels,
+        static_cast<uint32_t>(width), static_cast<uint32_t>(height),
+        std::span(pixels, width * height * result_channels),
+        format
     };
 }
 

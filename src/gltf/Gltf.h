@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 #include <array>
+#include <filesystem>
 #include <glm/fwd.hpp>
 
 #include <glm/vec2.hpp>
@@ -11,11 +12,9 @@
 #include <vulkan/vulkan_structs.hpp>
 #include <vulkan/vulkan_enums.hpp>
 
-namespace std::filesystem {
-    class path;
-}
+#include "../Logger.h"
 
-struct PlainImageData;
+class PlainImageData;
 class GraphicsBackend;
 
 namespace gltf {
@@ -24,54 +23,48 @@ namespace gltf {
         alignas(8) glm::vec3 normal;
         alignas(8) glm::vec2 texCoord;
 
-        static constexpr auto bindingDescriptors() {
-            constexpr std::array desc{
-                vk::VertexInputBindingDescription2EXT{
-                    .binding = 0,
-                    .stride = sizeof(Vertex::pos),
-                    .inputRate = vk::VertexInputRate::eVertex,
-                    .divisor = 1
-                },
-                vk::VertexInputBindingDescription2EXT{
-                    .binding = 1,
-                    .stride = sizeof(Vertex::normal),
-                    .inputRate = vk::VertexInputRate::eVertex,
-                    .divisor = 1
-                },
-                vk::VertexInputBindingDescription2EXT{
-                    .binding = 2,
-                    .stride = sizeof(Vertex::texCoord),
-                    .inputRate = vk::VertexInputRate::eVertex,
-                    .divisor = 1
-                }
-            };
-            return desc;
-        }
+        static constexpr std::array bindingDescriptors{
+            vk::VertexInputBindingDescription2EXT{
+                .binding = 0,
+                .stride = sizeof(Vertex::pos),
+                .inputRate = vk::VertexInputRate::eVertex,
+                .divisor = 1
+            },
+            vk::VertexInputBindingDescription2EXT{
+                .binding = 1,
+                .stride = sizeof(Vertex::normal),
+                .inputRate = vk::VertexInputRate::eVertex,
+                .divisor = 1
+            },
+            vk::VertexInputBindingDescription2EXT{
+                .binding = 2,
+                .stride = sizeof(Vertex::texCoord),
+                .inputRate = vk::VertexInputRate::eVertex,
+                .divisor = 1
+            }
+        };
 
-        static constexpr auto attributeDescriptors() {
-            // no offsets because they are not interleaved
-            constexpr std::array desc{
-                vk::VertexInputAttributeDescription2EXT{
-                    .location = 0,
-                    .binding = 0,
-                    .format = vk::Format::eR32G32B32Sfloat,
-                    .offset = 0,
-                },
-                vk::VertexInputAttributeDescription2EXT{
-                    .location = 1,
-                    .binding = 1,
-                    .format = vk::Format::eR32G32B32Sfloat,
-                    .offset = 0,
-                },
-                vk::VertexInputAttributeDescription2EXT{
-                    .location = 2,
-                    .binding = 2,
-                    .format = vk::Format::eR32G32Sfloat,
-                    .offset = 0,
-                }
-            };
-            return desc;
-        }
+        // no offsets because they are not interleaved
+        static constexpr std::array attributeDescriptors{
+            vk::VertexInputAttributeDescription2EXT{
+                .location = 0,
+                .binding = 0,
+                .format = vk::Format::eR32G32B32Sfloat,
+                .offset = 0,
+            },
+            vk::VertexInputAttributeDescription2EXT{
+                .location = 1,
+                .binding = 1,
+                .format = vk::Format::eR32G32B32Sfloat,
+                .offset = 0,
+            },
+            vk::VertexInputAttributeDescription2EXT{
+                .location = 2,
+                .binding = 2,
+                .format = vk::Format::eR32G32Sfloat,
+                .offset = 0,
+            }
+        };
     };
 
     struct Material {
@@ -90,8 +83,8 @@ namespace gltf {
     };
 
     struct SceneData {
-        size_t index_count;
-        size_t vertex_count;
+        size_t index_count = 0;
+        size_t vertex_count = 0;
 
         std::vector<unsigned char> vertex_position_data;
         std::vector<unsigned char> vertex_normal_data;

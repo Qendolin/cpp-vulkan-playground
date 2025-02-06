@@ -4,18 +4,17 @@
 #include <source_location>
 #include <filesystem>
 
-std::string Logger::shortFileName(const std::string_view file_name) {
-    std::string path = std::string(file_name);
-    std::replace(path.begin(), path.end(), '\\', '/');
-    size_t start = path.find("/src/");
+std::string Logger::shortFileName(std::string file_name) {
+    std::replace(file_name.begin(), file_name.end(), '\\', '/');
+    size_t start = file_name.find("/src/");
     if (start == std::string::npos)
         start = 0;
     else
         start += 1;
-    return path.substr(start);
+    return file_name.substr(start);
 }
 
-std::string Logger::shortFunctionName(const std::string_view function_name) {
+std::string_view Logger::shortFunctionName(std::string_view function_name) {
     size_t start = 0;
     size_t end = function_name.length();
     for (size_t i = start; i < end; i++) {
@@ -25,7 +24,7 @@ std::string Logger::shortFunctionName(const std::string_view function_name) {
             end = i;
     }
 
-    return std::string(function_name.substr(start, end - start));
+    return function_name.substr(start, end - start);
 }
 
 void Logger::info(std::string_view message, std::source_location location) {
@@ -60,7 +59,7 @@ void Logger::error(std::string_view message, std::source_location location) {
 }
 
 void Logger::check(bool be_true, std::string_view message, std::source_location location) {
-    if(be_true == true) return;
+    if (be_true == true) return;
     std::clog << "[CHK "
             << shortFileName(location.file_name()) << ':'
             << location.line() << ':'
@@ -68,6 +67,12 @@ void Logger::check(bool be_true, std::string_view message, std::source_location 
             << message << std::endl;
 }
 
-void Logger::panic(std::string_view message, std::stacktrace trace) {
-    throw std::runtime_error("PANIC: " + std::string(message) + "\n" + std::to_string(trace));
+__attribute__((noinline)) void Logger::panic(std::string_view message, const cpptrace::stacktrace &trace) {
+    // don't know why but trace.to_string fives a linker error on linux
+    std::ostringstream oss;
+    trace.print(oss, true);
+    const std::string string = oss.str();
+    std::string_view sv = string;
+    if (sv.ends_with("\n")) sv.remove_suffix(1);
+    throw std::runtime_error(std::format("PANIC: {}\n{}", message, sv));
 }

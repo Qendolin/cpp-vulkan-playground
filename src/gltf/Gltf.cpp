@@ -113,11 +113,6 @@ namespace gltf {
                 Logger::check(texcoord_view.byteStride == 0, "Texcoord buffer must be tightly packed");
                 Logger::check(index_view.byteStride == 0, "Index buffer must be tightly packed");
 
-                uint8_t index_size = 0;
-                if (index_access.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) index_size = 2;
-                else if (index_access.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) index_size = 4;
-                else Logger::check(false, "Index component type must be unsigned short or int");
-
                 const Buffer &position_buffer = model.buffers[position_view.buffer];
                 const Buffer &normal_buffer = model.buffers[normal_view.buffer];
                 const Buffer &texcoord_buffer = model.buffers[texcoord_view.buffer];
@@ -128,9 +123,9 @@ namespace gltf {
                 const auto normal_span = std::span(normal_buffer.data.cbegin() + static_cast<ptrdiff_t>(normal_view.byteOffset), normal_view.byteLength);
                 const auto texcoord_span = std::span(texcoord_buffer.data.cbegin() + static_cast<ptrdiff_t>(texcoord_view.byteOffset),
                                                      texcoord_view.byteLength);
-                vertex_positions.append_range(position_span);
-                vertex_normals.append_range(normal_span);
-                vertex_texcoords.append_range(texcoord_span);
+                vertex_positions.insert(vertex_positions.end(), position_span.begin(), position_span.end());
+                vertex_normals.insert(vertex_normals.end(), normal_span.begin(), normal_span.end());
+                vertex_texcoords.insert(vertex_texcoords.end(), texcoord_span.begin(), texcoord_span.end());
 
                 primitive_infos.emplace_back() = {
                     .indexOffset = static_cast<uint32_t>(index_index),
@@ -146,11 +141,13 @@ namespace gltf {
                     for (uint16_t index_short: indices_as_shorts) {
                         vertex_indices_view[index_index++] = static_cast<uint32_t>(index_short);
                     }
-                } else {
+                } else if (index_access.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
                     auto indices_as_ints = cast_span<const uint32_t>(index_span);
                     for (uint32_t index_int: indices_as_ints) {
                         vertex_indices_view[index_index++] = index_int;
                     }
+                } else {
+                    Logger::check(false, "Index component type must be unsigned short or int");
                 }
                 counted_verts += position_access.count;
             }
@@ -176,7 +173,7 @@ namespace gltf {
         }
 
         if (!ret) {
-            throw std::exception("failed to parse glTF");
+            Logger::panic("failed to parse GLTF");
         }
 
 
@@ -184,11 +181,8 @@ namespace gltf {
 
         size_t index_count = 0;
         size_t vertex_count = 0;
-        std::vector<bool> counted_accessors(model.accessors.size());
         for (auto node_i: scene.nodes) {
             for (const auto &prim: model.meshes[model.nodes[node_i].mesh].primitives) {
-                // if(counted_accessors[prim.indices]) continue;
-                // counted_accessors[prim.indices] = true;
                 index_count += model.accessors[prim.indices].count;
                 vertex_count += model.accessors[prim.attributes.at("POSITION")].count;
             }

@@ -40,11 +40,6 @@ namespace glfw {
         handle = glfwCreateWindow(create_info.width, create_info.height, create_info.title.c_str(), monitor, share);
     }
 
-    Window::~Window() {
-        glfwDestroyWindow(handle);
-        handle = nullptr;
-    }
-
     bool Window::shouldClose() const {
         return glfwWindowShouldClose(handle);
     }

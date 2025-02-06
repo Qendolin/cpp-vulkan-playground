@@ -28,7 +28,7 @@ static std::string read_file(const std::filesystem::path &path) {
 }
 
 class ShaderIncluder : public shaderc::CompileOptions::IncluderInterface {
-    struct IncludeResult : public shaderc_include_result {
+    struct IncludeResult : shaderc_include_result {
         const std::string source_name_str;
         const std::string content_str;
 
