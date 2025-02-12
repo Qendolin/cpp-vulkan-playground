@@ -78,6 +78,10 @@ public:
         return surfaceFormat.format;
     }
 
+    [[nodiscard]] vk::Format depthFormat() const {
+        return depthImageFormat;
+    }
+
     [[nodiscard]] vk::Extent2D extents() const {
         return surfaceExtents;
     }
@@ -123,18 +127,26 @@ public:
             Logger::panic("No suitable surface fromat found");
         surfaceFormat = surface_format_iter[0];
 
-        auto surface_fifo_present_mode_iter = std::find_if(surface_present_modes.begin(), surface_present_modes.end(),
-                                                           [](auto &&mode) {
-                                                               return mode == vk::PresentModeKHR::eFifo;
-                                                           });
+        auto present_mode_preference = [](const vk::PresentModeKHR mode) {
+            if(mode == vk::PresentModeKHR::eMailbox) return 3;
+            if(mode == vk::PresentModeKHR::eFifoRelaxed) return 2;
+            if(mode == vk::PresentModeKHR::eFifo) return 1;
+            if(mode == vk::PresentModeKHR::eImmediate) return 0;
+            return -1;
+        };
+        std::ranges::sort(surface_present_modes, [&present_mode_preference](const auto a, const auto b) {
+            return present_mode_preference(a) > present_mode_preference(b);
+        });
+        auto best_present_mode = surface_present_modes.front();
 
-        if (surface_fifo_present_mode_iter == surface_present_modes.end())
+        if (present_mode_preference(best_present_mode) < 0)
             Logger::panic("No suitable present mode found");
+        Logger::info("Using present mode: " + vk::to_string(best_present_mode));
 
         auto surface_present_mode = surface_present_modes[0];
-        auto swapchain_image_count = surface_capabilities.maxImageCount + 1;
-        if (surface_capabilities.maxImageCount > 0 && swapchain_image_count > surface_capabilities.maxImageCount)
-            swapchain_image_count = surface_capabilities.maxImageCount;
+        uint32_t swapchain_image_count = 2;
+        if (surface_capabilities.maxImageCount > 0)
+            swapchain_image_count = std::max(swapchain_image_count, surface_capabilities.maxImageCount);
         swapchain_image_count = std::max(swapchain_image_count, surface_capabilities.minImageCount);
 
         surfaceExtents = window.getFramebufferSize();

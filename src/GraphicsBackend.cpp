@@ -49,8 +49,8 @@ void StagingUploader::releaseAll() {
 
 GraphicsBackend::GraphicsBackend() {
     window = glfw::UniqueWindow(glfw::WindowCreateInfo{
-        .width = 800,
-        .height = 800,
+        .width = 1600,
+        .height = 900,
         .title = "Vulkan window",
         .resizable = true,
         .clientApi = glfw::ClientApi::None
@@ -187,6 +187,7 @@ GraphicsBackend::GraphicsBackend() {
         vk::PhysicalDeviceSynchronization2Features{.synchronization2 = true},
         vk::PhysicalDeviceDynamicRenderingFeaturesKHR{.dynamicRendering = true},
         vk::PhysicalDeviceShaderObjectFeaturesEXT{.shaderObject = true},
+        vk::PhysicalDeviceInlineUniformBlockFeatures{.inlineUniformBlock = true},
     };
 
     device = vk::SharedDevice(phyicalDevice.createDevice(device_create_info.get<vk::DeviceCreateInfo>()));

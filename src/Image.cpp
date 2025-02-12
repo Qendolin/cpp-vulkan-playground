@@ -1,4 +1,4 @@
-#include "Texture.h"
+#include "Image.h"
 
 #include <cmath>
 #include <filesystem>
@@ -9,6 +9,29 @@
 #include "GraphicsBackend.h"
 #include "Logger.h"
 
+constexpr ImageResourceAccess ImageResourceAccess::TRANSFER_WRITE = {
+    .stage = vk::PipelineStageFlagBits2::eTransfer, .access = vk::AccessFlagBits2::eTransferWrite, .layout = vk::ImageLayout::eTransferDstOptimal
+};
+
+constexpr ImageResourceAccess ImageResourceAccess::FRAGMENT_SHADER_READ = {
+    .stage = vk::PipelineStageFlagBits2::eFragmentShader, .access = vk::AccessFlagBits2::eShaderRead, .layout = vk::ImageLayout::eTransferDstOptimal
+};
+
+constexpr ImageResourceAccess ImageResourceAccess::COLOR_ATTACHMENT_WRITE = {
+    .stage = vk::PipelineStageFlagBits2::eColorAttachmentOutput, .access = vk::AccessFlagBits2::eColorAttachmentWrite, .layout = vk::ImageLayout::eAttachmentOptimal
+};
+
+constexpr ImageResourceAccess ImageResourceAccess::DEPTH_ATTACHMENT_READ = {
+    .stage = vk::PipelineStageFlagBits2::eEarlyFragmentTests, .access = vk::AccessFlagBits2::eDepthStencilAttachmentRead, .layout = vk::ImageLayout::eAttachmentOptimal
+};
+
+constexpr ImageResourceAccess ImageResourceAccess::DEPTH_ATTACHMENT_WRITE = {
+    .stage = vk::PipelineStageFlagBits2::eLateFragmentTests, .access = vk::AccessFlagBits2::eDepthStencilAttachmentWrite, .layout = vk::ImageLayout::eAttachmentOptimal
+};
+
+constexpr ImageResourceAccess ImageResourceAccess::PRESENT_SRC = {
+    .stage = vk::PipelineStageFlagBits2::eBottomOfPipe, .access = vk::AccessFlagBits2::eNone, .layout = vk::ImageLayout::ePresentSrcKHR
+};
 
 template<int SrcCh, int DstCh>
     requires (SrcCh >= 1) && (SrcCh <= 4) && (DstCh >= 1) && (DstCh <= 4)
@@ -79,14 +102,61 @@ PlainImageData PlainImageData::create(vk::Format format, int width, int height, 
     size_t elements = width * height;
     size_t size = elements * dst_channels;
     auto dst_data = static_cast<unsigned char *>(std::malloc(size));
-    copy_pixels(src_data, src_channels, dst_data, dst_channels, elements);
+    if(src_data) {
+        copy_pixels(src_data, src_channels, dst_data, dst_channels, elements);
+    }
 
     return {
         dst_data,
         static_cast<uint32_t>(width), static_cast<uint32_t>(height),
-        std::span(dst_data, width * height * dst_channels),
+        std::span(dst_data, size),
         format
     };
+}
+
+void PlainImageData::copyChannels(PlainImageData &dst, std::initializer_list<int> mapping) const {
+    if(dst.width != width || dst.height != height) {
+        Logger::panic("Image dimensions do not match");
+    }
+
+    auto channel_map = std::span(mapping);
+    uint32_t s_channels = vkuFormatComponentCount(static_cast<VkFormat>(format));
+    uint32_t d_channels = vkuFormatComponentCount(static_cast<VkFormat>(dst.format));
+
+    if(channel_map.size() != s_channels) {
+        Logger::panic("Not enough channels specified in mapping");
+    }
+
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            for (int sc = 0; sc < s_channels; ++sc) {
+                int dc = channel_map[sc];
+                if(dc < 0) continue;
+
+                size_t i = x + width * y;
+                size_t si = i * s_channels + sc;
+                size_t di = i * d_channels + dc;
+                dst.pixels[di] = pixels[si];
+            }
+        }
+    }
+}
+
+void PlainImageData::fill(std::initializer_list<int> channels, std::initializer_list<unsigned char> values) {
+    uint32_t s_channels = vkuFormatComponentCount(static_cast<VkFormat>(format));
+    auto channels_span = std::span(channels);
+    auto values_span = std::span(values);
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            for (int c = 0; c < channels_span.size(); ++c) {
+                int sc = channels_span[c];
+                size_t i = x + width * y;
+                size_t si = i * s_channels + sc;
+                unsigned char value = values_span[c];
+                pixels[si] = value;
+            }
+        }
+    }
 }
 
 PlainImageData PlainImageData::create(vk::Format format, const std::filesystem::path &path) {
@@ -102,15 +172,23 @@ PlainImageData PlainImageData::create(vk::Format format, const std::filesystem::
     };
 }
 
-Texture::Texture(vma::UniqueImage &&image, vma::UniqueAllocation &&allocation, const TextureCreateInfo &create_info)
+Image::Image(vma::UniqueImage &&image, vma::UniqueAllocation &&allocation, const ImageCreateInfo &create_info)
     : image(std::move(image)), allocation(std::move(allocation)), info(create_info) {
 }
 
-Texture Texture::create(const vma::Allocator &allocator, TextureCreateInfo create_info) {
+Image Image::create(const vma::Allocator &allocator, ImageCreateInfo create_info) {
     if (create_info.mip_levels == -1) {
         create_info.mip_levels = static_cast<uint32_t>(std::floor(std::log2(std::max(create_info.width, create_info.height)))) + 1;
     }
 
+    // TODO: VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT
+    // TODO: Handle unsupported formats
+    // auto properties = physical_device.getImageFormatProperties2({
+    //     .format = create_info.format,
+    //     .type = create_info.type,
+    //     .usage = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+    // });
+    
     auto [image, allocation] = allocator.createImageUnique(
         {
             .imageType = create_info.type,
@@ -129,76 +207,21 @@ Texture Texture::create(const vma::Allocator &allocator, TextureCreateInfo creat
     return {std::move(image), std::move(allocation), create_info};
 }
 
-Texture Texture::create(const vma::Allocator &allocator, const vk::CommandBuffer &cmd_buf, vk::Buffer staged_data, const TextureCreateInfo &create_info) {
-    Texture texture = create(allocator, create_info);
+Image Image::create(const vma::Allocator &allocator, const vk::CommandBuffer &cmd_buf, vk::Buffer staged_data, const ImageCreateInfo &create_info) {
+    Image image = create(allocator, create_info);
 
-    texture.toTransferDstLayout(cmd_buf);
-    texture.load(cmd_buf, 0, {}, staged_data);
+    image.barrier(cmd_buf, ImageResourceAccess::TRANSFER_WRITE);
+    image.load(cmd_buf, 0, {}, staged_data);
 
-    return texture;
+    return image;
 }
 
-void Texture::toTransferDstLayout(const vk::CommandBuffer &cmd_buf) {
-    vk::ImageMemoryBarrier2 barrier = {
-        .srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
-        .srcAccessMask = vk::AccessFlagBits2::eNone,
-        .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
-        .dstAccessMask = vk::AccessFlagBits2::eTransferWrite,
-        .oldLayout = layout,
-        .newLayout = vk::ImageLayout::eTransferDstOptimal,
-        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .image = *image,
-        .subresourceRange = {
-            .aspectMask = imageAspectFlags(),
-            .levelCount = info.mip_levels,
-            .layerCount = info.array_layers,
-        },
-    };
-
-    cmd_buf.pipelineBarrier2({
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers = &barrier,
-    });
-
-    layout = vk::ImageLayout::eTransferDstOptimal;
-}
-
-void Texture::toShaderReadOnlyLayout(const vk::CommandBuffer &cmd_buf) {
-    vk::ImageMemoryBarrier2 barrier = {
-        .srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
-        .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
-        .dstStageMask = vk::PipelineStageFlagBits2::eAllGraphics,
-        .dstAccessMask = vk::AccessFlagBits2::eShaderRead,
-        .oldLayout = layout,
-        .newLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .image = *image,
-        .subresourceRange = {
-            .aspectMask = imageAspectFlags(),
-            .levelCount = info.mip_levels,
-            .layerCount = info.array_layers,
-        },
-    };
-
-    cmd_buf.pipelineBarrier2({
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers = &barrier,
-    });
-
-    layout = vk::ImageLayout::eShaderReadOnlyOptimal;
-}
-
-void Texture::load(const vk::CommandBuffer &cmd_buf, uint32_t level, vk::Extent3D region, const vk::Buffer &data) {
+void Image::load(const vk::CommandBuffer &cmd_buf, uint32_t level, vk::Extent3D region, const vk::Buffer &data) {
     if (region.width == 0) region.width = info.width;
     if (region.height == 0) region.height = info.height;
     if (region.depth == 0) region.depth = info.depth;
 
-    if (layout != vk::ImageLayout::eTransferDstOptimal) {
-        Logger::warning("Texture image not in transfer dst optimal layout.");
-        toTransferDstLayout(cmd_buf);
-    }
+    barrier(cmd_buf, ImageResourceAccess::TRANSFER_WRITE);
 
     vk::BufferImageCopy image_copy = {
         .imageSubresource = {
@@ -211,11 +234,8 @@ void Texture::load(const vk::CommandBuffer &cmd_buf, uint32_t level, vk::Extent3
     cmd_buf.copyBufferToImage(data, *image, vk::ImageLayout::eTransferDstOptimal, image_copy);
 }
 
-void Texture::generateMipmaps(const vk::CommandBuffer &cmd_buf) {
-    if (layout != vk::ImageLayout::eTransferDstOptimal) {
-        Logger::warning("Texture image not in transfer dst optimal layout.");
-        toTransferDstLayout(cmd_buf);
-    }
+void Image::generateMipmaps(const vk::CommandBuffer &cmd_buf) {
+    barrier(cmd_buf, ImageResourceAccess::TRANSFER_WRITE);
 
     vk::ImageMemoryBarrier2 barrier = {
         .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
@@ -245,9 +265,9 @@ void Texture::generateMipmaps(const vk::CommandBuffer &cmd_buf) {
         int32_t next_level_height = std::max(level_height / 2, 1);
 
         // transition layout of lower mip to src
-        if (layout != vk::ImageLayout::eTransferSrcOptimal) {
+        if (prevAccess.layout != vk::ImageLayout::eTransferSrcOptimal) {
             barrier.subresourceRange.baseMipLevel = lvl - 1;
-            barrier.oldLayout = layout;
+            barrier.oldLayout = prevAccess.layout;
             barrier.newLayout = vk::ImageLayout::eTransferSrcOptimal;
             barrier.srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
             barrier.dstAccessMask = vk::AccessFlagBits2::eTransferRead;
@@ -287,9 +307,9 @@ void Texture::generateMipmaps(const vk::CommandBuffer &cmd_buf) {
     }
 
     // final transition, kinda useless, but brings all levels to the same layout
-    if (layout != vk::ImageLayout::eTransferSrcOptimal) {
+    if (prevAccess.layout != vk::ImageLayout::eTransferSrcOptimal) {
         barrier.subresourceRange.baseMipLevel = info.mip_levels - 1;
-        barrier.oldLayout = layout;
+        barrier.oldLayout = prevAccess.layout;
         barrier.newLayout = vk::ImageLayout::eTransferSrcOptimal;
         barrier.srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
         barrier.dstAccessMask = vk::AccessFlagBits2::eTransferRead;
@@ -302,10 +322,14 @@ void Texture::generateMipmaps(const vk::CommandBuffer &cmd_buf) {
         });
     }
 
-    layout = vk::ImageLayout::eTransferSrcOptimal;
+    prevAccess = {
+        .stage = vk::PipelineStageFlagBits2::eTransfer,
+        .access = vk::AccessFlagBits2::eTransferRead,
+        .layout = vk::ImageLayout::eTransferSrcOptimal
+    };
 }
 
-vk::UniqueImageView Texture::createDefaultView(const vk::Device &device) {
+vk::UniqueImageView Image::createDefaultView(const vk::Device &device) {
     return device.createImageViewUnique({
         .image = *image,
         .viewType = static_cast<vk::ImageViewType>(info.type),
@@ -319,7 +343,7 @@ vk::UniqueImageView Texture::createDefaultView(const vk::Device &device) {
 }
 
 
-vk::ImageAspectFlags Texture::imageAspectFlags() const {
+vk::ImageAspectFlags Image::imageAspectFlags() const {
     switch (info.format) {
         case vk::Format::eUndefined:
             Logger::panic("image format undefined");

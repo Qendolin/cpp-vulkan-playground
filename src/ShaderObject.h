@@ -239,9 +239,13 @@ public:
     [[nodiscard]] vk::PipelineLayout pipelineLayout() const {
         return *pipeline_layout;
     }
+
+    void bindDescriptorSet(vk::CommandBuffer command_buffer, int index, vk::DescriptorSet set, vk::ArrayProxy<const uint32_t> const &dynamicOffsets = {}) const {
+        command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipeline_layout, index, set, dynamicOffsets);
+    }
 };
 
-class ShaderLoader2 {
+class ShaderLoader {
     std::shared_ptr<ShaderCompiler> compiler;
 
 public:
@@ -250,7 +254,7 @@ public:
     bool print = false;
 
 
-    ShaderLoader2() {
+    ShaderLoader() {
         compiler = std::make_unique<ShaderCompiler>();
     }
 

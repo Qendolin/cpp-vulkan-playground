@@ -123,7 +123,7 @@ std::vector<uint32_t> ShaderCompiler::compile(const std::filesystem::path &sourc
     shaderc::SpvCompilationResult module = compiler->CompileGlslToSpv(preprocessed_code, kind, source_path.string().c_str(), options);
 
     if (module.GetCompilationStatus() != shaderc_compilation_status_success) {
-        Logger::panic(module.GetErrorMessage());
+        Logger::panic("Shader compilation failed:\n" +  module.GetErrorMessage());
     }
 
     return {module.begin(), module.end()};

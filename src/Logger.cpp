@@ -1,5 +1,6 @@
 #include "Logger.h"
 
+#include <assert.h>
 #include <iostream>
 #include <source_location>
 #include <filesystem>
@@ -23,7 +24,10 @@ std::string_view Logger::shortFunctionName(std::string_view function_name) {
         if (function_name[i] == '(')
             end = i;
     }
-
+    if(end - start == 0) {
+        static constexpr std::string_view anon = "<anonymous>";
+        return anon;
+    }
     return function_name.substr(start, end - start);
 }
 
@@ -65,6 +69,9 @@ void Logger::check(bool be_true, std::string_view message, std::source_location 
             << location.line() << ':'
             << shortFunctionName(location.function_name()) << "]: "
             << message << std::endl;
+#ifndef NDEBUG
+    assert(false);
+#endif
 }
 
 void Logger::panic(std::string_view message, const cpptrace::stacktrace &trace) {

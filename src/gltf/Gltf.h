@@ -21,6 +21,7 @@ namespace gltf {
     struct Vertex {
         alignas(8) glm::vec3 pos;
         alignas(8) glm::vec3 normal;
+        alignas(8) glm::vec4 tangent;
         alignas(8) glm::vec2 texCoord;
 
         static constexpr std::array bindingDescriptors{
@@ -38,6 +39,12 @@ namespace gltf {
             },
             vk::VertexInputBindingDescription2EXT{
                 .binding = 2,
+                .stride = sizeof(Vertex::tangent),
+                .inputRate = vk::VertexInputRate::eVertex,
+                .divisor = 1
+            },
+            vk::VertexInputBindingDescription2EXT{
+                .binding = 3,
                 .stride = sizeof(Vertex::texCoord),
                 .inputRate = vk::VertexInputRate::eVertex,
                 .divisor = 1
@@ -61,6 +68,12 @@ namespace gltf {
             vk::VertexInputAttributeDescription2EXT{
                 .location = 2,
                 .binding = 2,
+                .format = vk::Format::eR32G32B32A32Sfloat,
+                .offset = 0,
+            },
+            vk::VertexInputAttributeDescription2EXT{
+                .location = 3,
+                .binding = 3,
                 .format = vk::Format::eR32G32Sfloat,
                 .offset = 0,
             }
@@ -68,18 +81,22 @@ namespace gltf {
     };
 
     struct Material {
-        uint32_t index;
-        int albedo;
-        int orm;
-        int normal;
+        uint32_t index = -1u;
+        int albedo = -1;
+        int omr = -1;
+        int normal = -1;
+        glm::vec4 albedoFactor = glm::vec4(1.0, 1.0, 1.0, 1.0);
+        float metaillicFactor = 1.0;
+        float roughnessFactor = 1.0;
+        float normalFactor = 1.0;
     };
 
     struct Instance {
-        uint32_t indexOffset;
-        uint32_t indexCount;
-        int32_t vertexOffset;
-        glm::mat4 transformation;
-        Material material;
+        uint32_t indexOffset = 0;
+        uint32_t indexCount = 0;
+        int32_t vertexOffset = 0;
+        glm::mat4 transformation = glm::mat4(1.0);
+        Material material = {};
     };
 
     struct SceneData {
@@ -88,6 +105,7 @@ namespace gltf {
 
         std::vector<unsigned char> vertex_position_data;
         std::vector<unsigned char> vertex_normal_data;
+        std::vector<unsigned char> vertex_tangent_data;
         std::vector<unsigned char> vertex_texcoord_data;
         std::vector<unsigned char> index_data;
         std::vector<PlainImageData> images;
