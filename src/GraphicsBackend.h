@@ -9,6 +9,7 @@
 #define VMA_STATIC_VULKAN_FUNCTIONS 0
 #define VMA_DYNAMIC_VULKAN_FUNCTIONS 1
 #include <functional>
+#include <set>
 #include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
 
 #include "Logger.h"
@@ -54,11 +55,15 @@ class Swapchain {
     glfw::Window window;
     vk::SurfaceKHR surface;
 
+    bool mutableSwapchainFormatSupported;
     vk::SurfaceFormatKHR surfaceFormat = {.format = vk::Format::eUndefined, .colorSpace = vk::ColorSpaceKHR::eSrgbNonlinear};
+    vk::Format surfaceFormatLinear = vk::Format::eUndefined;
+
     vk::Extent2D surfaceExtents;
     vk::UniqueSwapchainKHR swapchain;
     std::vector<vk::Image> swapchainImages;
-    std::vector<vk::UniqueImageView> swapchainImageViews;
+    std::vector<vk::UniqueImageView> swapchainImageViewsSrgb;
+    std::vector<vk::UniqueImageView> swapchainImageViewsUnorm;
 
     vma::UniqueImage depthImage_;
     vma::UniqueAllocation depthImageAllocation;
@@ -66,20 +71,48 @@ class Swapchain {
     const vk::Format depthImageFormat = vk::Format::eD32Sfloat;
 
     uint32_t activeImageIndex = 0;
+    int imageCount_ = 0;
+    int minImageCount_ = 0;
+    int maxImageCount_ = 0;
+    vk::PresentModeKHR presentMode_ = vk::PresentModeKHR::eImmediate;
     bool invalid = true;
 
 public:
-    Swapchain(vma::Allocator allocator, vk::PhysicalDevice physical_device, vk::Device device, glfw::Window window, vk::SurfaceKHR surface)
-        : allocator(allocator), physicalDevice(physical_device), device(device), window(window), surface(surface) {
+    Swapchain(vma::Allocator allocator, vk::PhysicalDevice physical_device, vk::Device device, glfw::Window window, vk::SurfaceKHR surface,
+              bool mutable_swapchain_format_supported)
+        : allocator(allocator), physicalDevice(physical_device), device(device), window(window), surface(surface),
+          mutableSwapchainFormatSupported(mutable_swapchain_format_supported) {
         create();
     }
 
-    [[nodiscard]] vk::Format colorFormat() const {
+    [[nodiscard]] vk::Format colorFormatSrgb() const {
         return surfaceFormat.format;
+    }
+
+    [[nodiscard]] vk::Format colorFormatLinear() const {
+        if (surfaceFormatLinear == vk::Format::eUndefined)
+            return colorFormatSrgb();
+        return surfaceFormatLinear;
     }
 
     [[nodiscard]] vk::Format depthFormat() const {
         return depthImageFormat;
+    }
+
+    [[nodiscard]] int imageCount() const {
+        return imageCount_;
+    }
+
+    [[nodiscard]] int minImageCount() const {
+        return minImageCount_;
+    }
+
+    [[nodiscard]] int maxImageCount() const {
+        return maxImageCount_;
+    }
+
+    [[nodiscard]] vk::PresentModeKHR presentMode() const {
+        return presentMode_;
     }
 
     [[nodiscard]] vk::Extent2D extents() const {
@@ -102,8 +135,14 @@ public:
         return swapchainImages.at(activeImageIndex);
     }
 
-    [[nodiscard]] vk::ImageView colorView() const {
-        return *swapchainImageViews.at(activeImageIndex);
+    [[nodiscard]] vk::ImageView colorViewSrgb() const {
+        return *swapchainImageViewsSrgb.at(activeImageIndex);
+    }
+
+    [[nodiscard]] vk::ImageView colorViewLinear() const {
+        if (surfaceFormatLinear == vk::Format::eUndefined)
+            return colorViewSrgb();
+        return *swapchainImageViewsUnorm.at(activeImageIndex);
     }
 
     [[nodiscard]] vk::Image depthImage() const {
@@ -114,117 +153,7 @@ public:
         return *depthImageView;
     }
 
-    void create() {
-        auto surface_capabilities = physicalDevice.getSurfaceCapabilitiesKHR(surface);
-        auto surface_formats = physicalDevice.getSurfaceFormatsKHR(surface);
-        auto surface_present_modes = physicalDevice.getSurfacePresentModesKHR(surface);;
-
-        auto surface_format_iter = std::find_if(surface_formats.begin(), surface_formats.end(), [](auto &&format) {
-            return (format.format == vk::Format::eB8G8R8A8Srgb || format.format == vk::Format::eR8G8B8A8Srgb) && format.colorSpace ==
-                   vk::ColorSpaceKHR::eSrgbNonlinear;
-        });
-        if (surface_format_iter == surface_formats.end())
-            Logger::panic("No suitable surface fromat found");
-        surfaceFormat = surface_format_iter[0];
-
-        auto present_mode_preference = [](const vk::PresentModeKHR mode) {
-            if(mode == vk::PresentModeKHR::eMailbox) return 3;
-            if(mode == vk::PresentModeKHR::eFifoRelaxed) return 2;
-            if(mode == vk::PresentModeKHR::eFifo) return 1;
-            if(mode == vk::PresentModeKHR::eImmediate) return 0;
-            return -1;
-        };
-        std::ranges::sort(surface_present_modes, [&present_mode_preference](const auto a, const auto b) {
-            return present_mode_preference(a) > present_mode_preference(b);
-        });
-        auto best_present_mode = surface_present_modes.front();
-
-        if (present_mode_preference(best_present_mode) < 0)
-            Logger::panic("No suitable present mode found");
-        Logger::info("Using present mode: " + vk::to_string(best_present_mode));
-
-        auto surface_present_mode = surface_present_modes[0];
-        uint32_t swapchain_image_count = 2;
-        if (surface_capabilities.maxImageCount > 0)
-            swapchain_image_count = std::max(swapchain_image_count, surface_capabilities.maxImageCount);
-        swapchain_image_count = std::max(swapchain_image_count, surface_capabilities.minImageCount);
-
-        surfaceExtents = window.getFramebufferSize();
-        surfaceExtents.width = std::clamp(surfaceExtents.width, surface_capabilities.minImageExtent.width,
-                                          surface_capabilities.maxImageExtent.width);
-        surfaceExtents.height = std::clamp(surfaceExtents.height, surface_capabilities.minImageExtent.height,
-                                           surface_capabilities.maxImageExtent.height);
-
-        // need to be destroyed before swapchain is
-        swapchainImageViews.clear();
-        swapchain = device.createSwapchainKHRUnique({
-            .surface = surface,
-            .minImageCount = swapchain_image_count,
-            .imageFormat = surfaceFormat.format,
-            .imageColorSpace = surfaceFormat.colorSpace,
-            .imageExtent = surfaceExtents,
-            .imageArrayLayers = 1,
-            .imageUsage = vk::ImageUsageFlagBits::eColorAttachment,
-            .imageSharingMode = vk::SharingMode::eExclusive,
-            .preTransform = surface_capabilities.currentTransform,
-            .compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque,
-            .presentMode = surface_present_mode,
-            .clipped = true,
-            .oldSwapchain = *swapchain,
-        });
-
-        swapchainImages = device.getSwapchainImagesKHR(*swapchain);
-
-        swapchainImageViews.clear();
-        for (const auto &swapchain_image: swapchainImages) {
-            vk::ImageViewCreateInfo image_view_create_info = {
-                .image = swapchain_image,
-                .viewType = vk::ImageViewType::e2D,
-                .format = surfaceFormat.format,
-                .components = vk::ComponentMapping{},
-                .subresourceRange = {
-                    .aspectMask = vk::ImageAspectFlagBits::eColor,
-                    .baseMipLevel = 0,
-                    .levelCount = 1,
-                    .baseArrayLayer = 0,
-                    .layerCount = 1
-                }
-            };
-            swapchainImageViews.emplace_back(device.createImageViewUnique(image_view_create_info));
-        }
-
-        depthImageView.reset();
-        std::tie(depthImage_, depthImageAllocation) = allocator.createImageUnique(
-            {
-                .imageType = vk::ImageType::e2D,
-                .format = depthImageFormat,
-                .extent = {
-                    .width = surfaceExtents.width,
-                    .height = surfaceExtents.height,
-                    .depth = 1
-                },
-                .mipLevels = 1,
-                .arrayLayers = 1,
-                .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment,
-            },
-            {
-                .usage = vma::MemoryUsage::eAutoPreferDevice,
-                .requiredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal,
-            });
-
-        depthImageView = device.createImageViewUnique({
-            .image = *depthImage_,
-            .viewType = vk::ImageViewType::e2D,
-            .format = depthImageFormat,
-            .subresourceRange = {
-                .aspectMask = vk::ImageAspectFlagBits::eDepth,
-                .levelCount = 1,
-                .layerCount = 1
-            }
-        });
-
-        invalid = false;
-    }
+    void create();
 
     void recreate() {
         // wait if window is minimized
@@ -304,6 +233,7 @@ public:
     vk::SharedDevice device;
     uint32_t graphicsQueueIndex = -1;
     vk::Queue graphicsQueue = nullptr;
+    std::set<std::string> supportedDeviceExtensions;
 
     vk::UniqueCommandPool commandPool;
     std::vector<vk::UniqueCommandBuffer> commandBuffers;
@@ -321,4 +251,7 @@ public:
 
     void submit(TransientCommandBuffer &cmd_buf, bool wait) const;
 
+    bool supportsExtension(const char *name) const {
+        return supportedDeviceExtensions.contains(std::string(name));
+    }
 };

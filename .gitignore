@@ -1,4 +1,13 @@
 cmake-build-*/**
 .idea/**
+
+# large files
 *.blend1
+*.blend
+*.glb
+
+# config files
+imgui.ini
+
+# vcpkg
 vcpkg_installed/**

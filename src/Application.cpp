@@ -14,6 +14,7 @@
 #include "Image.h"
 #include "Descriptors.h"
 #include "Input.h"
+#include "imgui/ImGui.h"
 
 Application::Application() {
     backend = std::make_unique<GraphicsBackend>();
@@ -257,7 +258,10 @@ void Application::run() {
     };
     auto in_flight_fences = frameResources.create(create_signaled_fence);
 
-    auto swapchain = Swapchain(*backend->allocator, backend->phyicalDevice, *backend->device, *backend->window, *backend->surface);
+    auto swapchain = Swapchain(*backend->allocator, backend->phyicalDevice, *backend->device, *backend->window, *backend->surface,
+                               backend->supportsExtension(vk::KHRSwapchainMutableFormatExtensionName));
+
+    initImGui(*backend, swapchain);
 
     while (!backend->window->shouldClose()) {
         frameResources.advance();
@@ -265,6 +269,12 @@ void Application::run() {
         while (device->waitForFences({in_flight_fence}, true, UINT64_MAX) == vk::Result::eTimeout) {
         }
         input.update();
+
+        ImGui_ImplVulkan_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+
+        ImGui::ShowDemoWindow();
 
         auto image_available_semaphore = image_available_semaphores.get();
         auto render_finished_semaphore = render_finished_semaphores.get();
@@ -279,9 +289,16 @@ void Application::run() {
         }
 
         if(input.isMouseReleased() && input.isMousePress(GLFW_MOUSE_BUTTON_LEFT)) {
-            input.captureMouse();
+            if (!ImGui::GetIO().WantCaptureMouse)
+                input.captureMouse();
         } else if(input.isMouseCaptured() && input.isKeyPress(GLFW_KEY_LEFT_ALT)) {
             input.releaseMouse();
+        }
+
+        if (input.isMouseCaptured()) {
+            ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NoMouse;
+        } else {
+            ImGui::GetIO().ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
         }
 
         if(input.isMouseCaptured()) {
@@ -319,7 +336,7 @@ void Application::run() {
         // Reset fence once we are sure that we are submitting work
         device->resetFences({in_flight_fence});
 
-        ImageRef color_attachment(swapchain.colorImage(), swapchain.colorFormat(), {
+        ImageRef color_attachment(swapchain.colorImage(), swapchain.colorFormatSrgb(), {
                                       .aspectMask = vk::ImageAspectFlagBits::eColor,
                                       .levelCount = 1,
                                       .layerCount = 1,
@@ -338,7 +355,7 @@ void Application::run() {
         depth_attachment.barrier(command_buffer, ImageResourceAccess::DEPTH_ATTACHMENT_READ, ImageResourceAccess::DEPTH_ATTACHMENT_WRITE);
 
         vk::RenderingAttachmentInfoKHR color_attachment_info{
-            .imageView = swapchain.colorView(),
+            .imageView = swapchain.colorViewSrgb(),
             .imageLayout = vk::ImageLayout::eAttachmentOptimal,
             .loadOp = vk::AttachmentLoadOp::eClear,
             .clearValue = {.color = {.float32 = std::array{0.0f, 0.0f, 0.0f, 1.0f}}}
@@ -356,7 +373,7 @@ void Application::run() {
             .pColorAttachments = &color_attachment_info,
             .pDepthAttachment = &depth_attachment_info
         };
-        command_buffer.beginRenderingKHR(redering_info);
+        command_buffer.beginRendering(redering_info);
         command_buffer.bindShadersEXT(shader.stages(), shader.shaders());
 
         PipelineConfig pipeline_config = {
@@ -390,6 +407,15 @@ void Application::run() {
         }
         command_buffer.endRendering();
 
+        // draw imgui last
+        color_attachment_info.imageView = swapchain.colorViewLinear();
+        color_attachment_info.loadOp = vk::AttachmentLoadOp::eLoad;
+        depth_attachment_info.loadOp = vk::AttachmentLoadOp::eLoad;
+        command_buffer.beginRendering(redering_info);
+        ImGui::Render();
+        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer);
+        command_buffer.endRendering();
+
         color_attachment.barrier(command_buffer, ImageResourceAccess::PRESENT_SRC);
 
         command_buffer.end();
@@ -407,4 +433,8 @@ void Application::run() {
 
     Logger::info("Exited main loop");
     device->waitIdle();
+
+    ImGui_ImplVulkan_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
 }

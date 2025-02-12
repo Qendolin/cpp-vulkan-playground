@@ -23,7 +23,7 @@ set(CMAKE_VERBOSE_MAKEFILE ON)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(VulkanHeaders REQUIRED)
+find_package(VulkanHeaders CONFIG REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(unofficial-shaderc CONFIG REQUIRED)
@@ -34,6 +34,7 @@ find_package(tinyobjloader CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(VulkanUtilityLibraries CONFIG REQUIRED)
 find_package(cpptrace CONFIG REQUIRED)
+find_package(imgui CONFIG REQUIRED)
 
 file(GLOB_RECURSE sources CONFIGURE_DEPENDS "src/*.cpp")
 file(GLOB_RECURSE headers CONFIGURE_DEPENDS "src/*.h")
@@ -52,3 +53,4 @@ target_link_libraries(cpp_vulkan_playground PRIVATE tinyobjloader::tinyobjloader
 target_link_libraries(cpp_vulkan_playground PRIVATE nlohmann_json::nlohmann_json)
 target_link_libraries(cpp_vulkan_playground PRIVATE Vulkan::UtilityHeaders) # Unused-> Vulkan::SafeStruct Vulkan::LayerSettings  Vulkan::CompilerConfiguration
 target_link_libraries(cpp_vulkan_playground PRIVATE cpptrace::cpptrace)
+target_link_libraries(cpp_vulkan_playground PRIVATE imgui::imgui)
