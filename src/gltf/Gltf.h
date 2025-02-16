@@ -12,8 +12,6 @@
 #include <vulkan/vulkan_structs.hpp>
 #include <vulkan/vulkan_enums.hpp>
 
-#include "../Logger.h"
-
 class PlainImageData;
 class GraphicsBackend;
 

@@ -7,6 +7,7 @@
 #include "ImGui.h"
 
 
+class AppContext;
 class Swapchain;
 class GraphicsBackend;
 
@@ -14,4 +15,4 @@ namespace glfw {
     class Window;
 }
 
-void initImGui(const GraphicsBackend &backend, const Swapchain &swapchain);
+void initImGui(const AppContext& ctx);

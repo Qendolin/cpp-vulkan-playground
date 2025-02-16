@@ -5,6 +5,7 @@
 
 #include "Logger.h"
 #include "ShaderCompiler.h"
+#include "util/static_vector.h"
 
 class ShaderStage {
     vk::ShaderCreateInfoEXT create_info;
@@ -74,11 +75,11 @@ public:
     bool primitiveRestartEnable = false;
 
     // raster config
-    std::span<const vk::Viewport> viewports = {};
-    std::span<const vk::Rect2D> scissors = {};
+    util::static_vector<vk::Viewport, 8> viewports = {};
+    util::static_vector<vk::Rect2D, 8> scissors = {};
     bool rasterizerDiscardEnable = false;
     vk::SampleCountFlagBits rasterizationSamples = vk::SampleCountFlagBits::e1;
-    std::span<const vk::SampleMask> sampleMask = DEFAULT_SAMPLE_MASK;
+    util::static_vector<vk::SampleMask, 32> sampleMask = DEFAULT_SAMPLE_MASK;
     bool alphaToCoverageEnable = false;
     vk::PolygonMode polygonMode = vk::PolygonMode::eFill;
     float lineWidth = 1.0f;
@@ -103,10 +104,10 @@ public:
     StencilReferenceConfig stencilReference = {};
 
     // fragment config
-    std::span<const vk::Bool32> colorBlendEnable = DEFAULT_COLOR_BLEND_ENABLE;
-    std::span<const vk::ColorBlendEquationEXT> colorBlendEquations = DEFAULT_COLOR_BLEND_EQUATIONS;
-    std::array<const float, 4> blendConstants = {0, 0, 0, 0};
-    std::span<const vk::ColorComponentFlags> colorWriteMask = DEFAULT_COLOR_WRITE_MASK;
+    util::static_vector<vk::Bool32, 32> colorBlendEnable = DEFAULT_COLOR_BLEND_ENABLE;
+    util::static_vector<vk::ColorBlendEquationEXT, 32> colorBlendEquations = DEFAULT_COLOR_BLEND_EQUATIONS;
+    std::array<float, 4> blendConstants = {0, 0, 0, 0};
+    util::static_vector<vk::ColorComponentFlags, 32> colorWriteMask = DEFAULT_COLOR_WRITE_MASK;
 
     void apply(const vk::CommandBuffer &cmd_buf, vk::ShaderStageFlags stages) const {
         if (stages & vk::ShaderStageFlagBits::eVertex) {

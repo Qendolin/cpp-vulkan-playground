@@ -27,7 +27,7 @@ static std::string read_file(const std::filesystem::path &path) {
     return content;
 }
 
-class ShaderIncluder : public shaderc::CompileOptions::IncluderInterface {
+class ShaderIncluder final : public shaderc::CompileOptions::IncluderInterface {
     struct IncludeResult : shaderc_include_result {
         const std::string source_name_str;
         const std::string content_str;
@@ -71,7 +71,7 @@ ShaderCompiler::ShaderCompiler() {
 
 ShaderCompiler::~ShaderCompiler() = default;
 
-std::vector<uint32_t> ShaderCompiler::compile(const std::filesystem::path &source_path, vk::ShaderStageFlagBits stage, ShaderCompileOptions opt) {
+std::vector<uint32_t> ShaderCompiler::compile(const std::filesystem::path &source_path, vk::ShaderStageFlagBits stage, ShaderCompileOptions opt) const {
     shaderc::CompileOptions options = {};
 
     if (opt.debug)

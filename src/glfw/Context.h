@@ -7,12 +7,16 @@ namespace glfw {
 
         static void defaultErrorCallback(int error, const char *description);
 
+        bool primary = false;
+
     public:
         Context();
 
         Context(const Context &other) = delete;
 
-        Context(Context &&other) noexcept = default;
+        Context(Context &&other) noexcept {
+            this->primary = std::exchange(other.primary, false);
+        }
 
         Context &operator=(const Context &other) = delete;
 

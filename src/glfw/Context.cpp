@@ -17,6 +17,7 @@ namespace glfw {
             throw std::runtime_error("GLFW initialization failed");
         }
         isInitialized = true;
+        primary = true;
 
         if (!glfwVulkanSupported()) {
             throw std::runtime_error("GLFW vulkan not supported");
@@ -24,6 +25,7 @@ namespace glfw {
     }
 
     Context::~Context() {
+        if(!primary) return;
         glfwTerminate();
         isInitialized = false;
     }

@@ -4,7 +4,6 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 class Camera {
-   private:
     // vertical field of view, in radians
     float fov_;
     // aspect ratio (width / height)

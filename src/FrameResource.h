@@ -3,7 +3,6 @@
 #include <functional>
 #include <array>
 
-template<size_t Size>
 class FrameResourceManager;
 
 template<typename T>
@@ -13,14 +12,14 @@ concept PointerType = std::is_pointer_v<T> || requires(T t)
     { t.get() }; // Has a get() method like smart pointers
 };
 
-template<typename T, size_t Size>
+template<typename T>
 class FrameResource {
-    const FrameResourceManager<Size> *manager;
-    const std::array<T, Size> pool = {};
+    const FrameResourceManager *manager;
+    const std::vector<T> pool = {};
 
 public:
-    FrameResource(const FrameResourceManager<Size> *manager, std::array<T, Size> &&pool) : manager(manager),
-                                                                                           pool(std::move(pool)) {
+    FrameResource(const FrameResourceManager *manager, std::vector<T> &&pool) : manager(manager),
+                                                                                pool(std::move(pool)) {
     }
 
     ~FrameResource() = default;
@@ -28,7 +27,7 @@ public:
     auto &get() {
         int frame = manager->frame();
         if constexpr (PointerType<T>) {
-            return pool[frame].get();
+            return *pool[frame];
         } else {
             return pool[frame];
         }
@@ -36,42 +35,43 @@ public:
 
     auto &get(int i) {
         if constexpr (PointerType<T>) {
-            return pool[i % Size].get();
+            return pool[i % manager->size()].get();
         } else {
-            return pool[i % Size];
+            return pool[i % manager->size()];
         }
     }
 };
 
-template<size_t Size>
 class FrameResourceManager {
-private:
-    int current = 0;
+    int size_ = 1;
+    int current_ = 0;
 
 public:
-    explicit FrameResourceManager() = default;
+    explicit FrameResourceManager(int size) : size_(size) {
+
+    }
 
     ~FrameResourceManager() = default;
 
     [[nodiscard]] int frame() const {
-        return current;
+        return current_;
     }
 
     void advance() {
-        current = (current + 1) % Size;
+        current_ = (current_ + 1) % size_;
     }
 
     [[nodiscard]] int size() const {
-        return Size;
+        return size_;
     }
 
     template<typename Supplier>
     auto create(Supplier &&supplier) {
         using T = std::invoke_result_t<Supplier>;
-        std::array<T, Size> pool = {};
-        for (int i = 0; i < Size; ++i) {
+        std::vector<T> pool(size_);
+        for (int i = 0; i < size_; ++i) {
             pool[i] = supplier();
         }
-        return FrameResource<T, Size>(this, std::move(pool));
+        return FrameResource<T>(this, std::move(pool));
     }
 };

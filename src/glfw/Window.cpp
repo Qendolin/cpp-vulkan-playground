@@ -50,10 +50,22 @@ namespace glfw {
         return vk::Extent2D(width, height);
     }
 
-    vk::UniqueSurfaceKHR Window::createWindowSurfaceKHRUnique(vk::Instance instance) {
+    vk::UniqueSurfaceKHR Window::createWindowSurfaceKHRUnique(vk::Instance instance) const {
         VkSurfaceKHR surface_handle;
         VkResult result = glfwCreateWindowSurface(instance, handle, nullptr, &surface_handle);
         vk::detail::resultCheck(static_cast<vk::Result>(result), "glfwCreateWindowSurface");
         return vk::UniqueSurfaceKHR(surface_handle, instance);
+    }
+
+    void Window::centerOnScreen() const {
+        auto monitor = glfwGetWindowMonitor(handle);
+        if (!monitor) {
+            monitor = glfwGetPrimaryMonitor();
+        }
+        int x, y, mw, mh;
+        glfwGetMonitorWorkarea(monitor, &x, &y, &mw, &mh);
+        int ww, wh;
+        glfwGetWindowSize(handle, &ww, &wh);
+        glfwSetWindowPos(handle, x + mw / 2 - ww / 2, y + mh / 2 - wh / 2);
     }
 }

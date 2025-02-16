@@ -1,20 +1,23 @@
 #pragma once
 
+#include <ranges>
+
 #include <vulkan/vulkan.hpp>
-#include <vulkan/vulkan_shared.hpp>
 
 #include "glfw/Context.h"
 #include "glfw/Window.h"
 
 #define VMA_STATIC_VULKAN_FUNCTIONS 0
 #define VMA_DYNAMIC_VULKAN_FUNCTIONS 1
-#include <functional>
 #include <set>
 #include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
 
 #include "Logger.h"
+#include "Swapchain.h"
+#include "glfw/Input.h"
 
-using TransientCommandBuffer = vk::UniqueHandle<vk::CommandBuffer, VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>;
+
+class Swapchain;
 
 class StagingUploader {
 public:
@@ -48,210 +51,117 @@ private:
     std::vector<std::pair<vk::Buffer, vma::Allocation> > active;
 };
 
-class Swapchain {
-    vma::Allocator allocator;
-    vk::PhysicalDevice physicalDevice;
-    vk::Device device;
-    glfw::Window window;
-    vk::SurfaceKHR surface;
-
-    bool mutableSwapchainFormatSupported;
-    vk::SurfaceFormatKHR surfaceFormat = {.format = vk::Format::eUndefined, .colorSpace = vk::ColorSpaceKHR::eSrgbNonlinear};
-    vk::Format surfaceFormatLinear = vk::Format::eUndefined;
-
-    vk::Extent2D surfaceExtents;
-    vk::UniqueSwapchainKHR swapchain;
-    std::vector<vk::Image> swapchainImages;
-    std::vector<vk::UniqueImageView> swapchainImageViewsSrgb;
-    std::vector<vk::UniqueImageView> swapchainImageViewsUnorm;
-
-    vma::UniqueImage depthImage_;
-    vma::UniqueAllocation depthImageAllocation;
-    vk::UniqueImageView depthImageView;
-    const vk::Format depthImageFormat = vk::Format::eD32Sfloat;
-
-    uint32_t activeImageIndex = 0;
-    int imageCount_ = 0;
-    int minImageCount_ = 0;
-    int maxImageCount_ = 0;
-    vk::PresentModeKHR presentMode_ = vk::PresentModeKHR::eImmediate;
-    bool invalid = true;
-
+class InstanceContext {
 public:
-    Swapchain(vma::Allocator allocator, vk::PhysicalDevice physical_device, vk::Device device, glfw::Window window, vk::SurfaceKHR surface,
-              bool mutable_swapchain_format_supported)
-        : allocator(allocator), physicalDevice(physical_device), device(device), window(window), surface(surface),
-          mutableSwapchainFormatSupported(mutable_swapchain_format_supported) {
-        create();
+    glfw::Context glfw = {};
+    vk::UniqueInstance instance = {};
+    vk::UniqueDebugUtilsMessengerEXT debugMessenger = {};
+
+    std::set<std::string> supportedExtensions;
+
+    InstanceContext();
+
+    [[nodiscard]] vk::Instance get() const {
+        return *instance;
     }
 
-    [[nodiscard]] vk::Format colorFormatSrgb() const {
-        return surfaceFormat.format;
-    }
+    static VKAPI_ATTR VkBool32 VKAPI_CALL vulkanErrorCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+                                                              VkDebugUtilsMessageTypeFlagsEXT messageType,
+                                                              const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
+                                                              void *pUserData);
 
-    [[nodiscard]] vk::Format colorFormatLinear() const {
-        if (surfaceFormatLinear == vk::Format::eUndefined)
-            return colorFormatSrgb();
-        return surfaceFormatLinear;
-    }
+    InstanceContext(InstanceContext &&other) = delete;
 
-    [[nodiscard]] vk::Format depthFormat() const {
-        return depthImageFormat;
-    }
+    InstanceContext &operator=(InstanceContext &&other) = delete;
 
-    [[nodiscard]] int imageCount() const {
-        return imageCount_;
-    }
+    InstanceContext(const InstanceContext &other) = delete;
 
-    [[nodiscard]] int minImageCount() const {
-        return minImageCount_;
-    }
-
-    [[nodiscard]] int maxImageCount() const {
-        return maxImageCount_;
-    }
-
-    [[nodiscard]] vk::PresentModeKHR presentMode() const {
-        return presentMode_;
-    }
-
-    [[nodiscard]] vk::Extent2D extents() const {
-        return surfaceExtents;
-    }
-
-    [[nodiscard]] vk::Rect2D area() const {
-        return {{}, surfaceExtents};
-    }
-
-    [[nodiscard]] float width() const {
-        return static_cast<float>(surfaceExtents.width);
-    }
-
-    [[nodiscard]] float height() const {
-        return static_cast<float>(surfaceExtents.height);
-    }
-
-    [[nodiscard]] vk::Image colorImage() const {
-        return swapchainImages.at(activeImageIndex);
-    }
-
-    [[nodiscard]] vk::ImageView colorViewSrgb() const {
-        return *swapchainImageViewsSrgb.at(activeImageIndex);
-    }
-
-    [[nodiscard]] vk::ImageView colorViewLinear() const {
-        if (surfaceFormatLinear == vk::Format::eUndefined)
-            return colorViewSrgb();
-        return *swapchainImageViewsUnorm.at(activeImageIndex);
-    }
-
-    [[nodiscard]] vk::Image depthImage() const {
-        return *depthImage_;
-    }
-
-    [[nodiscard]] vk::ImageView depthView() const {
-        return *depthImageView;
-    }
-
-    void create();
-
-    void recreate() {
-        // wait if window is minimized
-        int width = 0, height = 0;
-        glfwGetFramebufferSize(static_cast<GLFWwindow *>(window), &width, &height);
-        while (width == 0 || height == 0) {
-            glfwWaitEvents();
-            glfwGetFramebufferSize(static_cast<GLFWwindow *>(window), &width, &height);
-        }
-        device.waitIdle();
-
-        create();
-    }
-
-    void invalidate() {
-        invalid = true;
-    }
-
-    bool next(const vk::Semaphore &image_available_semaphore) {
-        auto extents = window.getFramebufferSize();
-        if (surfaceExtents.width != extents.width || surfaceExtents.height != extents.height) {
-            recreate();
-            return false;
-        }
-
-        try {
-            auto image_acquistion_result = device.acquireNextImageKHR(*swapchain, UINT64_MAX, image_available_semaphore, nullptr);
-            if (image_acquistion_result.result == vk::Result::eSuboptimalKHR) {
-                Logger::warning("Swapchain may need recreation: VK_SUBOPTIMAL_KHR");
-                invalidate();
-            }
-            activeImageIndex = image_acquistion_result.value;
-        } catch (const vk::OutOfDateKHRError &) {
-            Logger::warning("Swapchain needs recreation: VK_ERROR_OUT_OF_DATE_KHR");
-            invalidate();
-        }
-
-        if (invalid) {
-            recreate();
-            return false;
-        }
-        return true;
-    }
-
-    void present(const vk::Queue &queue, vk::PresentInfoKHR &present_info) {
-        present_info
-                .setSwapchains(*swapchain)
-                .setImageIndices(activeImageIndex);
-
-        try {
-            vk::Result result = queue.presentKHR(present_info);
-            if (result == vk::Result::eSuboptimalKHR) {
-                Logger::warning("Swapchain may need recreation: VK_SUBOPTIMAL_KHR");
-                invalidate();
-            }
-        } catch (const vk::OutOfDateKHRError &) {
-            Logger::warning("Swapchain needs recreation: VK_ERROR_OUT_OF_DATE_KHR");
-            invalidate();
-        }
-
-        if (invalid) {
-            recreate();
-        }
-    }
+    InstanceContext &operator=(const InstanceContext &other) = delete;
 };
 
-class GraphicsBackend {
+class DeviceContext {
 public:
-    glfw::Context glfw;
-    glfw::UniqueWindow window;
-    vk::UniqueInstance instance;
+    InstanceContext instace;
 
-    vk::UniqueDebugUtilsMessengerEXT debugMessenger;
+    vk::PhysicalDevice physicalDevice = {};
+    vk::UniqueDevice device = {};
 
-    vk::UniqueSurfaceKHR surface;
-    vk::PhysicalDevice phyicalDevice = nullptr;
-    vk::SharedDevice device;
-    uint32_t graphicsQueueIndex = -1;
-    vk::Queue graphicsQueue = nullptr;
-    std::set<std::string> supportedDeviceExtensions;
+    // graphics and compute
+    uint32_t mainQueueFamily = -1u;
+    // async compute, if available
+    uint32_t computeQueueFamily = -1u;
+    // async transfer, if available
+    uint32_t transferQueueFamily = -1u;
 
-    vk::UniqueCommandPool commandPool;
-    std::vector<vk::UniqueCommandBuffer> commandBuffers;
+    vk::Queue mainQueue = {};
+    vk::Queue computeQueue = {};
+    vk::Queue transferQueue = {};
 
-    vma::UniqueAllocator allocator;
+    vma::UniqueAllocator allocator = {};
 
-public:
-    GraphicsBackend();
+    std::set<std::string> supportedExtensions;
 
-    ~GraphicsBackend();
+    DeviceContext();
 
-    void createCommandBuffers(int max_frames_in_flight);
-
-    [[nodiscard]] TransientCommandBuffer createTransientCommandBuffer() const;
-
-    void submit(TransientCommandBuffer &cmd_buf, bool wait) const;
-
-    bool supportsExtension(const char *name) const {
-        return supportedDeviceExtensions.contains(std::string(name));
+    [[nodiscard]] vk::Device get() const {
+        return *device;
     }
+
+    DeviceContext(DeviceContext &&other) = delete;
+
+    DeviceContext &operator=(DeviceContext &&other) = delete;
+
+    DeviceContext(const DeviceContext &other) = delete;
+
+    DeviceContext &operator=(const DeviceContext &other) = delete;
+};
+
+class WindowContext {
+public:
+    struct Config {
+        int width;
+        int height;
+        std::string title;
+    };
+
+    DeviceContext device;
+    const InstanceContext &instance;
+
+    glfw::UniqueWindow window;
+    vk::UniqueSurfaceKHR surface;
+
+    std::unique_ptr<glfw::Input> input;
+
+    explicit WindowContext(const Config &config);
+
+    [[nodiscard]] glfw::Window get() const {
+        return *window;
+    }
+
+    WindowContext(WindowContext &&other) = delete;
+
+    WindowContext &operator=(WindowContext &&other) noexcept = delete;
+
+    WindowContext(const WindowContext &other) = delete;
+
+    WindowContext &operator=(const WindowContext &other) = delete;
+};
+
+class AppContext {
+public:
+    WindowContext window;
+    const DeviceContext &device;
+    const InstanceContext &instance;
+
+    std::unique_ptr<Swapchain> swapchain;
+
+    explicit AppContext(const WindowContext::Config &window_config);
+
+    AppContext(AppContext &&other) = delete;
+
+    AppContext &operator=(AppContext &&other) noexcept = delete;
+
+    AppContext(const AppContext &other) = delete;
+
+    AppContext &operator=(const AppContext &other) = delete;
 };

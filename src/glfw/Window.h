@@ -89,11 +89,13 @@ namespace glfw {
 
         [[nodiscard]] vk::Extent2D getFramebufferSize() const;
 
-        vk::UniqueSurfaceKHR createWindowSurfaceKHRUnique(vk::Instance instance);
+        [[nodiscard]] vk::UniqueSurfaceKHR createWindowSurfaceKHRUnique(vk::Instance instance) const;
 
         explicit operator GLFWwindow *() const {
             return handle;
         }
+
+        void centerOnScreen() const;
     };
 
     class UniqueWindow {
@@ -120,7 +122,6 @@ namespace glfw {
 
         UniqueWindow &operator=(UniqueWindow &&other) noexcept {
             if (this != &other) {
-                reset();
                 window = std::exchange(other.window, Window{});
             }
             return *this;

@@ -5,7 +5,6 @@
 #include <cpptrace/cpptrace.hpp>
 
 class Logger {
-private:
     static std::string shortFileName(std::string file_name);
 
     static std::string_view shortFunctionName(std::string_view function_name);
