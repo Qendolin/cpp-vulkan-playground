@@ -1,4 +1,4 @@
-cmake_policy(SET CMP0077 NEW)
+set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 
 find_package(VulkanHeaders CONFIG REQUIRED)
 find_package(VulkanMemoryAllocator CONFIG REQUIRED)
@@ -13,6 +13,7 @@ find_package(VulkanUtilityLibraries CONFIG REQUIRED)
 find_package(cpptrace CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
 
+option(TRACY_ENABLE "" OFF)
 set(TRACY_TIMER_FALLBACK ON)
 FetchContent_Declare(
         tracy

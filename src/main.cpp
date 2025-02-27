@@ -2,8 +2,14 @@
 #include <iostream>
 
 #include "Application.h"
+#include "Logger.h"
 
 int main() {
+
+#ifdef TRACY_ENABLE
+    Logger::info("Tracy enabled");
+#endif
+
     try {
         Application app;
         app.run();

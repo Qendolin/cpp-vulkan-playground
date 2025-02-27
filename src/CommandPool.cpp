@@ -7,8 +7,10 @@
 CommandPool::CommandPool(vk::Device device, vk::Queue queue, uint32_t queue_index, UseMode mode)
     : device_(device), queue_(queue), mode_(mode) {
     vk::CommandPoolCreateFlags flags = {};
-    if (mode == UseMode::Single || mode == UseMode::Reset)
+    if (mode == UseMode::Single || mode == UseMode::Reset || mode == UseMode::ResetIndivitual)
         flags |= vk::CommandPoolCreateFlagBits::eTransient;
+    if (mode == UseMode::ResetIndivitual)
+        flags |= vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
     pool = device.createCommandPoolUnique({.flags = flags, .queueFamilyIndex = queue_index});
 
     fence_ = device.createFenceUnique({});

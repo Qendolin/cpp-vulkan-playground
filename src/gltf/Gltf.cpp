@@ -195,7 +195,7 @@ namespace gltf {
         }
 
         if (!ret) {
-            Logger::panic("failed to parse GLTF");
+            Logger::panic("failed to load GLTF");
         }
 
 

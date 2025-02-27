@@ -5,7 +5,10 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/fast_trigonometry.hpp>
+#include <vulkan/vulkan.hpp>
+// after vulkan
 #include <tracy/Tracy.hpp>
+#include <tracy/TracyVulkan.hpp>
 
 #include "Camera.h"
 #include "CommandPool.h"
@@ -242,12 +245,11 @@ void Application::run() {
     auto one_time_commands =
             CommandPool(device, ctx.device.mainQueue, ctx.device.mainQueueFamily, CommandPool::UseMode::Single);
 
-    // TracyVkCtx(
-    //     static_cast<VkPhysicalDevice>(ctx.device.physicalDevice),
-    //     static_cast<VkDevice>(ctx.device.get()),
-    //     static_cast<VkQueue>(ctx.device.mainQueue),
-    //     static_cast<VkCommandBuffer>()
-    // );
+    auto tracy_cmd_pool =
+            CommandPool(device, ctx.device.mainQueue, ctx.device.mainQueueFamily, CommandPool::UseMode::ResetIndivitual);
+    auto tracy_cmd_buf = tracy_cmd_pool.create();
+    TracyVkCtx tracy_context =
+            TracyVkContext(ctx.device.physicalDevice, ctx.device.get(), ctx.device.mainQueue, tracy_cmd_buf);
 
     DescriptorAllocator descriptor_allocator(device);
     DescriptorSetLayout scene_descriptor_layout(
@@ -266,7 +268,7 @@ void Application::run() {
             ) // material factors
     );
 
-    gltf::SceneData gltf_data = gltf::load("assets/sponza.glb");
+    gltf::SceneData gltf_data = gltf::load("assets/models/sponza.glb");
     auto scene_data = upload_gltf_data(ctx, gltf_data, descriptor_allocator, material_descriptor_layout);
 
     auto uniform_buffers = frameResources.create([&] { return UnifromBuffer<SceneUniforms>(allocator); });
@@ -299,8 +301,8 @@ void Application::run() {
     std::array push_constant_ranges = {push_constant_range};
 
     const auto load_shader = [&]() {
-        auto vert_sh = loader.load("assets/test.vert");
-        auto frag_sh = loader.load("assets/test.frag");
+        auto vert_sh = loader.load("assets/shaders/test.vert");
+        auto frag_sh = loader.load("assets/shaders/test.frag");
         return Shader(device, {vert_sh, frag_sh}, descriptor_set_layouts, push_constant_ranges);
     };
     auto shader = load_shader();
@@ -324,17 +326,23 @@ void Application::run() {
     while (!ctx.window.get().shouldClose()) {
         frameResources.advance();
         auto &in_flight_fence = in_flight_fences.current();
-        while (device.waitForFences(in_flight_fence, true, UINT64_MAX) == vk::Result::eTimeout) {
+        {
+            ZoneScopedN("Wait Swapchain Fence");
+            while (device.waitForFences(in_flight_fence, true, UINT64_MAX) == vk::Result::eTimeout) {
+            }
+            input.update();
         }
-        input.update();
 
         auto &image_available_semaphore = image_available_semaphores.current();
-        if (!swapchain.advance(image_available_semaphore)) {
-            continue;
-        }
+        {
+            ZoneScopedN("Advance Swapchain");
+            if (!swapchain.advance(image_available_semaphore)) {
+                continue;
+            }
 
-        // Reset fence once we are sure that we are submitting work
-        device.resetFences({in_flight_fence});
+            // Reset fence once we are sure that we are submitting work
+            device.resetFences({in_flight_fence});
+        }
 
         //
         // Start of rendering and application code
@@ -344,150 +352,169 @@ void Application::run() {
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        if (input.isKeyPress(GLFW_KEY_F5)) {
-            Logger::info("Reloading shader");
-            try {
-                shader = load_shader();
-            } catch (const std::exception &exc) {
-                Logger::error("Reload failed: " + std::string(exc.what()));
+        {
+            ZoneScopedN("Logic Update");
+            if (input.isKeyPress(GLFW_KEY_F5)) {
+                Logger::info("Reloading shader");
+                try {
+                    shader = load_shader();
+                } catch (const std::exception &exc) {
+                    Logger::error("Reload failed: " + std::string(exc.what()));
+                }
             }
-        }
 
-        if (input.isMouseReleased() && input.isMousePress(GLFW_MOUSE_BUTTON_LEFT)) {
-            if (!ImGui::GetIO().WantCaptureMouse)
-                input.captureMouse();
-        } else if (input.isMouseCaptured() && input.isKeyPress(GLFW_KEY_LEFT_ALT)) {
-            input.releaseMouse();
-        }
+            if (input.isMouseReleased() && input.isMousePress(GLFW_MOUSE_BUTTON_LEFT)) {
+                if (!ImGui::GetIO().WantCaptureMouse)
+                    input.captureMouse();
+            } else if (input.isMouseCaptured() && input.isKeyPress(GLFW_KEY_LEFT_ALT)) {
+                input.releaseMouse();
+            }
 
-        if (input.isMouseCaptured()) {
-            ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NoMouse;
-        } else {
-            ImGui::GetIO().ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
-        }
+            if (input.isMouseCaptured()) {
+                ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NoMouse;
+            } else {
+                ImGui::GetIO().ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
+            }
 
-        if (input.isMouseCaptured()) {
-            // yaw
-            camera.angles.y -= input.mouseDelta().x * glm::radians(0.15f);
-            camera.angles.y = glm::wrapAngle(camera.angles.y);
+            if (input.isMouseCaptured()) {
+                // yaw
+                camera.angles.y -= input.mouseDelta().x * glm::radians(0.15f);
+                camera.angles.y = glm::wrapAngle(camera.angles.y);
 
-            // pitch
-            camera.angles.x -= input.mouseDelta().y * glm::radians(0.15f);
-            camera.angles.x = glm::clamp(camera.angles.x, -glm::half_pi<float>(), glm::half_pi<float>());
+                // pitch
+                camera.angles.x -= input.mouseDelta().y * glm::radians(0.15f);
+                camera.angles.x = glm::clamp(camera.angles.x, -glm::half_pi<float>(), glm::half_pi<float>());
 
-            glm::vec3 move_input = {
-                input.isKeyDown(GLFW_KEY_D) - input.isKeyDown(GLFW_KEY_A),
-                input.isKeyDown(GLFW_KEY_SPACE) - input.isKeyDown(GLFW_KEY_LEFT_CONTROL),
-                input.isKeyDown(GLFW_KEY_S) - input.isKeyDown(GLFW_KEY_W)
+                glm::vec3 move_input = {
+                    input.isKeyDown(GLFW_KEY_D) - input.isKeyDown(GLFW_KEY_A),
+                    input.isKeyDown(GLFW_KEY_SPACE) - input.isKeyDown(GLFW_KEY_LEFT_CONTROL),
+                    input.isKeyDown(GLFW_KEY_S) - input.isKeyDown(GLFW_KEY_W)
+                };
+                glm::vec3 velocity = move_input * 5.0f;
+                velocity = glm::mat3(glm::rotate(glm::mat4(1.0), camera.angles.y, {0, 1, 0})) * velocity;
+                camera.position += velocity * input.timeDelta();
+            }
+
+            camera.setViewport(swapchain.width(), swapchain.height());
+            camera.updateViewMatrix();
+
+            SceneUniforms uniforms = {
+                .view = camera.viewMatrix(), .proj = camera.projectionMatrix(), .camera = glm::vec4(camera.position, 1.0)
             };
-            glm::vec3 velocity = move_input * 5.0f;
-            velocity = glm::mat3(glm::rotate(glm::mat4(1.0), camera.angles.y, {0, 1, 0})) * velocity;
-            camera.position += velocity * input.timeDelta();
+
+            uniform_buffers->front() = uniforms;
         }
 
-        camera.setViewport(swapchain.width(), swapchain.height());
-        camera.updateViewMatrix();
+        vk::CommandBuffer cmd_buf;
+        {
+            ZoneScopedN("Reset Commands");
+            auto &draw_commands = draw_command_pools.current();
+            draw_commands.reset();
+            cmd_buf = draw_commands.create();
+            cmd_buf.begin(vk::CommandBufferBeginInfo{.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+        }
 
-        SceneUniforms uniforms = {
-            .view = camera.viewMatrix(), .proj = camera.projectionMatrix(), .camera = glm::vec4(camera.position, 1.0)
-        };
+        {
+            TracyVkCollect(tracy_context, cmd_buf);
+            TracyVkNamedZone(tracy_context, __tracy_cmd_buf_zone, cmd_buf, "Record Commands", true);
+            ZoneScopedN("Record Commands");
 
-        uniform_buffers->front() = uniforms;
-
-        ImageRef color_attachment(
-                swapchain.colorImage(), swapchain.colorFormatSrgb(),
-                {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1}
-        );
-        ImageRef depth_attachment(
-                swapchain.depthImage(), swapchain.depthFormat(),
-                {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1}
-        );
-
-        auto &draw_commands = draw_command_pools.current();
-        draw_commands.reset();
-        auto cmd_buf = draw_commands.create();
-        cmd_buf.begin(vk::CommandBufferBeginInfo{.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
-
-        color_attachment.barrier(cmd_buf, ImageResourceAccess::COLOR_ATTACHMENT_WRITE);
-        depth_attachment.barrier(
-                cmd_buf, ImageResourceAccess::DEPTH_ATTACHMENT_READ, ImageResourceAccess::DEPTH_ATTACHMENT_WRITE
-        );
-
-        vk::RenderingAttachmentInfoKHR color_attachment_info{
-            .imageView = swapchain.colorViewSrgb(),
-            .imageLayout = vk::ImageLayout::eAttachmentOptimal,
-            .loadOp = vk::AttachmentLoadOp::eClear,
-            .clearValue = {.color = {.float32 = std::array{0.0f, 0.0f, 0.0f, 1.0f}}}
-        };
-        vk::RenderingAttachmentInfoKHR depth_attachment_info{
-            .imageView = swapchain.depthView(),
-            .imageLayout = vk::ImageLayout::eAttachmentOptimal,
-            .loadOp = vk::AttachmentLoadOp::eClear,
-            .clearValue = {.depthStencil = {0.0f, 0}}
-        };
-        vk::RenderingInfoKHR redering_info = {
-            .renderArea = swapchain.area(),
-            .layerCount = 1,
-            .colorAttachmentCount = 1,
-            .pColorAttachments = &color_attachment_info,
-            .pDepthAttachment = &depth_attachment_info
-        };
-        cmd_buf.beginRendering(redering_info);
-        cmd_buf.bindShadersEXT(shader.stages(), shader.shaders());
-
-        PipelineConfig pipeline_config = {
-            .vertexBindingDescriptions = gltf::Vertex::bindingDescriptors,
-            .vertexAttributeDescriptions = gltf::Vertex::attributeDescriptors,
-            .viewports = {{vk::Viewport{0.0f, swapchain.height(), swapchain.width(), -swapchain.height(), 0.0f, 1.0f}}},
-            .scissors = {{swapchain.area()}},
-            .cullMode = vk::CullModeFlagBits::eNone,
-            .frontFace = vk::FrontFace::eCounterClockwise, // TODO: why CCW?!?
-            .depthCompareOp = vk::CompareOp::eGreaterOrEqual
-        };
-        pipeline_config.apply(cmd_buf, shader.stageFlags());
-
-        cmd_buf.bindVertexBuffers(
-                0, {*scene_data.positions, *scene_data.normals, *scene_data.tangents, *scene_data.texcoords}, {0, 0, 0, 0}
-        );
-        cmd_buf.bindIndexBuffer(*scene_data.indices, 0, vk::IndexType::eUint32);
-        shader.bindDescriptorSet(cmd_buf, 0, scene_descriptor_sets.current().get());
-
-        for (const auto &instance: gltf_data.instances) {
-            shader.bindDescriptorSet(cmd_buf, 1, scene_data.descriptors[instance.material.index].get());
-
-            cmd_buf.pushConstants(
-                    shader.pipelineLayout(), vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &instance.transformation
+            ImageRef color_attachment(
+                    swapchain.colorImage(), swapchain.colorFormatSrgb(),
+                    {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1}
             );
-            cmd_buf.drawIndexed(instance.indexCount, 1, instance.indexOffset, instance.vertexOffset, 0);
+            ImageRef depth_attachment(
+                    swapchain.depthImage(), swapchain.depthFormat(),
+                    {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1}
+            );
+            color_attachment.barrier(cmd_buf, ImageResourceAccess::COLOR_ATTACHMENT_WRITE);
+            depth_attachment.barrier(
+                    cmd_buf, ImageResourceAccess::DEPTH_ATTACHMENT_READ, ImageResourceAccess::DEPTH_ATTACHMENT_WRITE
+            );
+
+            vk::RenderingAttachmentInfoKHR color_attachment_info{
+                .imageView = swapchain.colorViewSrgb(),
+                .imageLayout = vk::ImageLayout::eAttachmentOptimal,
+                .loadOp = vk::AttachmentLoadOp::eClear,
+                .clearValue = {.color = {.float32 = std::array{0.0f, 0.0f, 0.0f, 1.0f}}}
+            };
+            vk::RenderingAttachmentInfoKHR depth_attachment_info{
+                .imageView = swapchain.depthView(),
+                .imageLayout = vk::ImageLayout::eAttachmentOptimal,
+                .loadOp = vk::AttachmentLoadOp::eClear,
+                .clearValue = {.depthStencil = {0.0f, 0}}
+            };
+            vk::RenderingInfoKHR redering_info = {
+                .renderArea = swapchain.area(),
+                .layerCount = 1,
+                .colorAttachmentCount = 1,
+                .pColorAttachments = &color_attachment_info,
+                .pDepthAttachment = &depth_attachment_info
+            };
+            cmd_buf.beginRendering(redering_info);
+            cmd_buf.bindShadersEXT(shader.stages(), shader.shaders());
+
+            PipelineConfig pipeline_config = {
+                .vertexBindingDescriptions = gltf::Vertex::bindingDescriptors,
+                .vertexAttributeDescriptions = gltf::Vertex::attributeDescriptors,
+                .viewports = {{vk::Viewport{0.0f, swapchain.height(), swapchain.width(), -swapchain.height(), 0.0f, 1.0f}}},
+                .scissors = {{swapchain.area()}},
+                .cullMode = vk::CullModeFlagBits::eNone,
+                .frontFace = vk::FrontFace::eCounterClockwise, // TODO: why CCW?!?
+                .depthCompareOp = vk::CompareOp::eGreaterOrEqual
+            };
+            pipeline_config.apply(cmd_buf, shader.stageFlags());
+
+            cmd_buf.bindVertexBuffers(
+                    0, {*scene_data.positions, *scene_data.normals, *scene_data.tangents, *scene_data.texcoords},
+                    {0, 0, 0, 0}
+            );
+            cmd_buf.bindIndexBuffer(*scene_data.indices, 0, vk::IndexType::eUint32);
+            shader.bindDescriptorSet(cmd_buf, 0, scene_descriptor_sets.current().get());
+
+            for (const auto &instance: gltf_data.instances) {
+                shader.bindDescriptorSet(cmd_buf, 1, scene_data.descriptors[instance.material.index].get());
+
+                cmd_buf.pushConstants(
+                        shader.pipelineLayout(), vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &instance.transformation
+                );
+                cmd_buf.drawIndexed(instance.indexCount, 1, instance.indexOffset, instance.vertexOffset, 0);
+            }
+            cmd_buf.endRendering();
+
+            frame_times.update(input.timeDelta());
+            frame_times.draw();
+
+            // draw imgui last
+            {
+                TracyVkNamedZone(tracy_context, __tracy_imgui_render_zone, cmd_buf, "ImGui Render", true);
+                color_attachment_info.imageView = swapchain.colorViewLinear();
+                color_attachment_info.loadOp = vk::AttachmentLoadOp::eLoad;
+                depth_attachment_info.loadOp = vk::AttachmentLoadOp::eLoad;
+                cmd_buf.beginRendering(redering_info);
+                ImGui::Render();
+                ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd_buf);
+            }
+
+            cmd_buf.endRendering();
+            color_attachment.barrier(cmd_buf, ImageResourceAccess::PRESENT_SRC);
+
+            cmd_buf.end();
         }
-        cmd_buf.endRendering();
 
-        frame_times.update(input.timeDelta());
-        frame_times.draw();
+        {
+            ZoneScopedN("Submit & Present");
+            auto &render_finished_semaphore = render_finished_semaphores.current();
+            vk::PipelineStageFlags pipe_stage_flags = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+            vk::SubmitInfo submit_info = vk::SubmitInfo()
+                                                 .setCommandBuffers(cmd_buf)
+                                                 .setWaitSemaphores(image_available_semaphore)
+                                                 .setWaitDstStageMask(pipe_stage_flags)
+                                                 .setSignalSemaphores(render_finished_semaphore);
+            ctx.device.mainQueue.submit({submit_info}, in_flight_fence);
 
-        // draw imgui last
-        color_attachment_info.imageView = swapchain.colorViewLinear();
-        color_attachment_info.loadOp = vk::AttachmentLoadOp::eLoad;
-        depth_attachment_info.loadOp = vk::AttachmentLoadOp::eLoad;
-        cmd_buf.beginRendering(redering_info);
-        ImGui::Render();
-        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd_buf);
-        cmd_buf.endRendering();
-
-        color_attachment.barrier(cmd_buf, ImageResourceAccess::PRESENT_SRC);
-
-        cmd_buf.end();
-
-        auto &render_finished_semaphore = render_finished_semaphores.current();
-        vk::PipelineStageFlags pipe_stage_flags = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-        vk::SubmitInfo submit_info = vk::SubmitInfo()
-                                             .setCommandBuffers(cmd_buf)
-                                             .setWaitSemaphores(image_available_semaphore)
-                                             .setWaitDstStageMask(pipe_stage_flags)
-                                             .setSignalSemaphores(render_finished_semaphore);
-        ctx.device.mainQueue.submit({submit_info}, in_flight_fence);
-
-        swapchain.present(ctx.device.mainQueue, vk::PresentInfoKHR().setWaitSemaphores(render_finished_semaphore));
+            swapchain.present(ctx.device.mainQueue, vk::PresentInfoKHR().setWaitSemaphores(render_finished_semaphore));
+        }
         FrameMark;
     }
 
@@ -497,4 +524,5 @@ void Application::run() {
     ImGui_ImplVulkan_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
+    TracyVkDestroy(tracy_context);
 }

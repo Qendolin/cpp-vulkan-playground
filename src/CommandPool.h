@@ -7,7 +7,7 @@
 
 class CommandPool {
 public:
-    enum class UseMode { Single, Reset, Reuse };
+    enum class UseMode { Single, Reset, ResetIndivitual, Reuse };
 
 private:
     vk::Device device_ = {};
