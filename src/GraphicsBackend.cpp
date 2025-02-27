@@ -2,34 +2,32 @@
 
 #include "GraphicsBackend.h"
 
+#include <algorithm>
+#include <format>
+#include <cstring>
 #include <set>
 #include <ranges>
+#include <vulkan/vulkan.h>
+#include <glfw/glfw3.h>
+
+#include <vulkan/vulkan.hpp>
+
+#include "Logger.h"
+
 
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 
-vk::Buffer StagingUploader::stage(const void *data, size_t size) {
-    vma::AllocationInfo allocation_result = {};
-    active.emplace_back() = allocator.createBuffer(
-        {
-            .size = size,
-            .usage = vk::BufferUsageFlagBits::eTransferSrc,
-        },
-        {
-            .flags = vma::AllocationCreateFlagBits::eHostAccessSequentialWrite | vma::AllocationCreateFlagBits::eMapped,
-            .usage = vma::MemoryUsage::eAuto,
-            .requiredFlags = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
-        },
-        &allocation_result);
-    std::memcpy(allocation_result.pMappedData, data, size);
-
-    return active.back().first;
-}
-
-void StagingUploader::releaseAll() {
-    for (auto &[buffer, alloc]: active) {
-        allocator.destroyBuffer(buffer, alloc);
+static VkBool32 vulkanErrorCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT /*messageType*/,
+                                    const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void * /*pUserData*/) {
+    if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+        Logger::error(std::string(pCallbackData->pMessage));
+    } else if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
+        Logger::warning(std::string(pCallbackData->pMessage));
+    } else {
+        Logger::debug(std::string(pCallbackData->pMessage));
     }
-    active.clear();
+
+    return VK_FALSE;
 }
 
 InstanceContext::InstanceContext() {
@@ -55,6 +53,7 @@ InstanceContext::InstanceContext() {
 
     std::vector extensions = glfw::Context::getRequiredInstanceExtensions();
     extensions.push_back(vk::EXTDebugUtilsExtensionName);
+    extensions.push_back(vk::KHRGetSurfaceCapabilities2ExtensionName);
     instance_create_info.setPEnabledExtensionNames(extensions);
 
     Logger::info("Available Layers:");
@@ -79,24 +78,11 @@ InstanceContext::InstanceContext() {
                        vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance |
                        vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation |
                        vk::DebugUtilsMessageTypeFlagBitsEXT::eDeviceAddressBinding,
-        .pfnUserCallback = vulkanErrorCallback,
+        .pfnUserCallback = &vulkanErrorCallback,
         .pUserData = nullptr,
     };
 
     debugMessenger = instance->createDebugUtilsMessengerEXTUnique(debug_utils_messenger_create_info);
-}
-
-VkBool32 InstanceContext::vulkanErrorCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType,
-                                              const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *pUserData) {
-    if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
-        Logger::error(std::string(pCallbackData->pMessage));
-    } else if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
-        Logger::warning(std::string(pCallbackData->pMessage));
-    } else {
-        Logger::debug(std::string(pCallbackData->pMessage));
-    }
-
-    return VK_FALSE;
 }
 
 class DeviceSelector {
@@ -108,7 +94,6 @@ class DeviceSelector {
         auto extension_properties = device.enumerateDeviceExtensionProperties();
         auto extension_names = std::views::transform(extension_properties, [](const auto &e) { return std::string(e.extensionName.data()); });
         auto extension_set = std::set(extension_names.begin(), extension_names.end());
-
         return std::ranges::all_of(names,
                                    [&](const auto &name) { return extension_set.contains(name); });
     }
@@ -125,7 +110,7 @@ class DeviceSelector {
                                    [&](const auto &entry) {
                                        const auto &[index, queue] = entry;
                                        return (queue.queueFlags & vk::QueueFlagBits::eGraphics)
-                                              && glfwGetPhysicalDevicePresentationSupport(instance, device, index) == GLFW_TRUE;
+                                              && glfwGetPhysicalDevicePresentationSupport(instance, device, static_cast<uint32_t>(index)) == GLFW_TRUE;
                                    });
     }
 
@@ -176,7 +161,8 @@ public:
 DeviceContext::DeviceContext() {
     const auto &ctx = instace;
     std::array required_extensions = {
-        vk::KHRSwapchainExtensionName, vk::EXTMemoryBudgetExtensionName, vk::KHRDynamicRenderingExtensionName, vk::EXTShaderObjectExtensionName
+        vk::KHRSwapchainExtensionName, vk::EXTMemoryBudgetExtensionName, vk::KHRDynamicRenderingExtensionName, vk::EXTShaderObjectExtensionName,
+        vk::KHRUniformBufferStandardLayoutExtensionName, vk::EXTScalarBlockLayoutExtensionName
     };
     std::array optional_extensions = {vk::KHRSwapchainMutableFormatExtensionName};
 
@@ -230,7 +216,17 @@ DeviceContext::DeviceContext() {
     uint32_t compute_queue_result_index = queue_create_infos[computeQueueFamily].queueCount++;
     uint32_t transfer_queue_result_index = queue_create_infos[transferQueueFamily].queueCount++;
 
+    // fixup invlaid create infos
     std::erase_if(queue_create_infos, [](const auto &info) { return info.queueCount == 0; });
+    for (auto &queue_create_info: queue_create_infos) {
+        auto max = queue_families.at(queue_create_info.queueFamilyIndex).queueCount;
+        if (queue_create_info.queueCount > max) {
+            queue_create_info.queueCount = max;
+        }
+    }
+    main_queue_result_index = std::min(main_queue_result_index, queue_create_infos[mainQueueFamily].queueCount - 1);
+    compute_queue_result_index = std::min(compute_queue_result_index, queue_create_infos[computeQueueFamily].queueCount - 1);
+    transfer_queue_result_index = std::min(transfer_queue_result_index, queue_create_infos[transferQueueFamily].queueCount - 1);
 
     auto extension_properties = physicalDevice.enumerateDeviceExtensionProperties();
     auto extension_names = std::views::transform(extension_properties, [](const auto &e) { return std::string(e.extensionName.data()); });
@@ -286,7 +282,6 @@ WindowContext::WindowContext(const Config &config): instance(device.instace) {
         .height = config.height,
         .title = config.title,
         .resizable = true,
-        .clientApi = glfw::ClientApi::None
     });
     surface = window->createWindowSurfaceKHRUnique(ctx.instace.get());
     window->centerOnScreen();
@@ -300,6 +295,5 @@ WindowContext::WindowContext(const Config &config): instance(device.instace) {
 }
 
 AppContext::AppContext(const WindowContext::Config &window_config): window(window_config), device(window.device), instance(window.device.instace) {
-    const auto &ctx = window;
-    swapchain = std::make_unique<Swapchain>(ctx);
+    swapchain = std::make_unique<Swapchain>(window);
 }

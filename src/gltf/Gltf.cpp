@@ -75,7 +75,7 @@ namespace gltf {
 
         for (size_t i = 0; i < model.meshes.size(); i++) {
             const auto &mesh = model.meshes[i];
-            mesh_primitive_indices[i] = primitive_infos.size();
+            mesh_primitive_indices[i] = static_cast<uint32_t>(primitive_infos.size());
 
             for (const auto &prim: mesh.primitives) {
                 Logger::check(prim.mode == TINYGLTF_MODE_TRIANGLES, "Unsupported primitive mode: " + std::to_string(prim.mode));
@@ -85,15 +85,15 @@ namespace gltf {
                 int tangent_access_i = -1;
                 int texcoord_access_i = -1;
 
-                for (auto &[key, i]: prim.attributes) {
+                for (auto &[key, j]: prim.attributes) {
                     if (key == "POSITION") {
-                        position_access_i = i;
+                        position_access_i = j;
                     } else if (key == "NORMAL") {
-                        normal_access_i = i;
+                        normal_access_i = j;
                     } else if (key == "TANGENT") {
-                        tangent_access_i = i;
+                        tangent_access_i = j;
                     } else if (key == "TEXCOORD_0") {
-                        texcoord_access_i = i;
+                        texcoord_access_i = j;
                     }
                 }
 
@@ -231,7 +231,7 @@ namespace gltf {
 
         for (const auto &material: model.materials) {
             Material &mat = scene_data.materials.emplace_back();
-            mat.index = scene_data.materials.size() - 1;
+            mat.index = static_cast<uint32_t>(scene_data.materials.size()) - 1;
             mat.albedoFactor = glm::vec4(
                 material.pbrMetallicRoughness.baseColorFactor.at(0),
                 material.pbrMetallicRoughness.baseColorFactor.at(1),
@@ -247,8 +247,8 @@ namespace gltf {
                 mat.albedo = albedo_index;
             }
             int o_index = material.occlusionTexture.index;
-            PlainImageData* omr_image_data = nullptr;
-            if(o_index != -1) {
+            PlainImageData *omr_image_data = nullptr;
+            if (o_index != -1) {
                 const auto &o_texture = model.textures[o_index];
                 load_texture(o_index, o_texture.source, vk::Format::eR8G8B8A8Unorm);
                 omr_image_data = &scene_data.images[o_index];
@@ -259,16 +259,18 @@ namespace gltf {
                 const auto &mr_texture = model.textures[mr_index];
                 const auto &mr_image = model.images[mr_texture.source];
                 // TODO: This is untested, and I think its wrong
-                if(omr_image_data) {
-                    Logger::check(mr_image.width == omr_image_data->width && mr_image.height == omr_image_data->height, "Occlusion texture size doesn't match metalness-roughness texture size");
-                    PlainImageData mr_data = PlainImageData::create(vk::Format::eR8G8Unorm, mr_image.width, mr_image.height, mr_image.component, mr_image.image.data());
+                if (omr_image_data) {
+                    Logger::check(mr_image.width == omr_image_data->width && mr_image.height == omr_image_data->height,
+                                  "Occlusion texture size doesn't match metalness-roughness texture size");
+                    PlainImageData mr_data = PlainImageData::create(vk::Format::eR8G8Unorm, mr_image.width, mr_image.height, mr_image.component,
+                                                                    mr_image.image.data());
                     mr_data.copyChannels(*omr_image_data, {-1, 1, 2});
                 } else {
                     load_texture(mr_index, mr_texture.source, vk::Format::eR8G8B8A8Unorm);
                     mat.omr = mr_index;
                 }
             }
-            if(o_index != -1 && mr_index == -1) {
+            if (o_index != -1 && mr_index == -1) {
                 omr_image_data->fill({1, 2}, {0xff, 0xff});
             }
             int normal_index = material.normalTexture.index;

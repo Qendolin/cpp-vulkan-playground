@@ -25,5 +25,5 @@ public:
 
     ~ShaderCompiler();
 
-    std::vector<uint32_t> compile(const std::filesystem::path &source_path, vk::ShaderStageFlagBits stage, ShaderCompileOptions opt) const;
+    [[nodiscard]] std::vector<uint32_t> compile(const std::filesystem::path &source_path, vk::ShaderStageFlagBits stage, ShaderCompileOptions opt) const;
 };

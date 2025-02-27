@@ -1,55 +1,16 @@
 #pragma once
 
-#include <ranges>
-
-#include <vulkan/vulkan.hpp>
-
-#include "glfw/Context.h"
-#include "glfw/Window.h"
-
-#define VMA_STATIC_VULKAN_FUNCTIONS 0
-#define VMA_DYNAMIC_VULKAN_FUNCTIONS 1
 #include <set>
+#include <vulkan/vulkan.hpp>
 #include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
 
-#include "Logger.h"
 #include "Swapchain.h"
+#include "glfw/Context.h"
+#include "glfw/Window.h"
 #include "glfw/Input.h"
 
 
 class Swapchain;
-
-class StagingUploader {
-public:
-    explicit StagingUploader(const vma::Allocator &allocator) : allocator(allocator) {
-    }
-
-    ~StagingUploader() {
-        releaseAll();
-    }
-
-    vk::Buffer stage(const void *data, size_t size);
-
-    template<std::ranges::contiguous_range R>
-    vk::Buffer stage(R &&data) {
-        using T = std::ranges::range_value_t<R>;
-        size_t size = data.size() * sizeof(T);
-        return stage(data.data(), size);
-    }
-
-    template<std::ranges::contiguous_range R>
-    void upload(vk::CommandBuffer cmd_buf, R &&data, vk::Buffer dst) {
-        using T = std::ranges::range_value_t<R>;
-        vk::Buffer staged = stage(std::forward<R>(data));
-        cmd_buf.copyBuffer(staged, dst, vk::BufferCopy{.size = data.size() * sizeof(T)});
-    }
-
-    void releaseAll();
-
-private:
-    const vma::Allocator &allocator;
-    std::vector<std::pair<vk::Buffer, vma::Allocation> > active;
-};
 
 class InstanceContext {
 public:
@@ -64,11 +25,6 @@ public:
     [[nodiscard]] vk::Instance get() const {
         return *instance;
     }
-
-    static VKAPI_ATTR VkBool32 VKAPI_CALL vulkanErrorCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-                                                              VkDebugUtilsMessageTypeFlagsEXT messageType,
-                                                              const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
-                                                              void *pUserData);
 
     InstanceContext(InstanceContext &&other) = delete;
 

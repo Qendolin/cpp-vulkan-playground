@@ -115,12 +115,17 @@ namespace glfw {
         std::vector<CallbackRegistration<KeyCallback> > keyCallbacks_;
         std::vector<CallbackRegistration<CharCallback> > charCallbacks_;
 
-        void *storedKeyCallback_ = nullptr;
-        void *storedCurorPosCallback_ = nullptr;
-        void *storedMouseButtonCallback_ = nullptr;
-        void *storedScrollCallback_ = nullptr;
-        void *storedCharCallback_ = nullptr;
-        void *storedWindowFocusCallback_ = nullptr;
+        void *(*storedKeyCallback_)() = nullptr;
+
+        void *(*storedCurorPosCallback_)() = nullptr;
+
+        void *(*storedMouseButtonCallback_)() = nullptr;
+
+        void *(*storedScrollCallback_)() = nullptr;
+
+        void *(*storedCharCallback_)() = nullptr;
+
+        void *(*storedWindowFocusCallback_)() = nullptr;
 
         /**
          * Polls every key and mouse button to ensure that the internal state is up to date.
@@ -229,7 +234,7 @@ namespace glfw {
          * @param key the printed key symbol.
          * @return `true` if the given key is being held down.
          */
-        [[nodiscard]] bool isKeyDown(const std::string& key) const {
+        [[nodiscard]] bool isKeyDown(const std::string &key) const {
             if (!keyMap_.contains(key))
                 return false;
             return isKeyDown(keyMap_.at(key));

@@ -1,6 +1,7 @@
 #include "Context.h"
 
 #include <iostream>
+#include <utility>
 #include <GLFW/glfw3.h>
 
 namespace glfw {
@@ -22,6 +23,10 @@ namespace glfw {
         if (!glfwVulkanSupported()) {
             throw std::runtime_error("GLFW vulkan not supported");
         }
+    }
+
+    Context::Context(Context &&other) noexcept {
+        this->primary = std::exchange(other.primary, false);
     }
 
     Context::~Context() {

@@ -1,5 +1,9 @@
 #include "Window.h"
 
+#include <utility>
+#include <vulkan/vulkan.h>
+#include <GLFW/glfw3.h>
+
 namespace glfw {
     Window::Window(const WindowCreateInfo &create_info, GLFWmonitor *monitor, GLFWwindow *share) {
         glfwDefaultWindowHints();
@@ -29,13 +33,7 @@ namespace glfw {
         glfwWindowHint(GLFW_STEREO, create_info.stereo);
         glfwWindowHint(GLFW_SRGB_CAPABLE, create_info.srgbCapable);
         glfwWindowHint(GLFW_DOUBLEBUFFER, create_info.doublebuffer);
-        glfwWindowHint(GLFW_CLIENT_API, static_cast<int>(create_info.clientApi));
-        glfwWindowHint(GLFW_CONTEXT_CREATION_API, static_cast<int>(create_info.contextCreationApi));
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, create_info.contextVersionMajor);
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, create_info.contextVersionMinor);
-        glfwWindowHint(GLFW_CONTEXT_ROBUSTNESS, static_cast<int>(create_info.contextRobustness));
-        glfwWindowHint(GLFW_CONTEXT_RELEASE_BEHAVIOR, static_cast<int>(create_info.contextReleaseBehavior));
-        glfwWindowHint(GLFW_CONTEXT_DEBUG, create_info.contextDebug);
+        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
         handle = glfwCreateWindow(create_info.width, create_info.height, create_info.title.c_str(), monitor, share);
     }
@@ -67,5 +65,22 @@ namespace glfw {
         int ww, wh;
         glfwGetWindowSize(handle, &ww, &wh);
         glfwSetWindowPos(handle, x + mw / 2 - ww / 2, y + mh / 2 - wh / 2);
+    }
+
+    UniqueWindow::UniqueWindow(UniqueWindow &&other) noexcept: window(std::exchange(other.window, Window{})) {
+    }
+
+    UniqueWindow &UniqueWindow::operator=(UniqueWindow &&other) noexcept {
+        if (this != &other) {
+            window = std::exchange(other.window, Window{});
+        }
+        return *this;
+    }
+
+    void UniqueWindow::reset() noexcept {
+        if (auto *handle = static_cast<GLFWwindow *>(window)) {
+            glfwDestroyWindow(handle);
+            window = Window{};
+        }
     }
 }

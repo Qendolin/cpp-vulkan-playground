@@ -1,18 +1,18 @@
 #include "Swapchain.h"
 
+#include <algorithm>
 #include <GLFW/glfw3.h>
 
 #include "Logger.h"
-
+#include "GraphicsBackend.h"
 
 void Swapchain::create() {
     const auto device = ctx.device.get();
     const auto physicalDevice = ctx.device.physicalDevice;
     const auto surface = *ctx.surface;
 
-    auto surface_capabilities = physicalDevice.getSurfaceCapabilitiesKHR(surface);
     auto surface_formats = physicalDevice.getSurfaceFormatsKHR(surface);
-    auto surface_present_modes = physicalDevice.getSurfacePresentModesKHR(surface);;
+    auto surface_present_modes = physicalDevice.getSurfacePresentModesKHR(surface);
 
     auto surface_format_iter = std::find_if(surface_formats.begin(), surface_formats.end(), [](auto &&format) {
         return (format.format == vk::Format::eB8G8R8A8Srgb || format.format == vk::Format::eR8G8B8A8Srgb) && format.colorSpace ==
@@ -38,7 +38,15 @@ void Swapchain::create() {
         Logger::panic("No suitable present mode found");
     Logger::info("Using present mode: " + vk::to_string(presentMode_));
 
-    auto surface_present_mode = surface_present_modes[0];
+    // Query surface capabilites when using this specifc present mode
+    vk::StructureChain surface_capabilities_query = {
+        vk::PhysicalDeviceSurfaceInfo2KHR{.surface = surface},
+        vk::SurfacePresentModeEXT{.presentMode = presentMode_}
+    };
+    // different present modes can have specifc image count requirements
+    auto surface_capabilities = physicalDevice.getSurfaceCapabilities2KHR(
+        surface_capabilities_query.get<vk::PhysicalDeviceSurfaceInfo2KHR>()).surfaceCapabilities;
+
     uint32_t swapchain_image_count = 0;
     if (surface_capabilities.maxImageCount > 0)
         swapchain_image_count = std::min(swapchain_image_count, surface_capabilities.maxImageCount);
@@ -89,7 +97,7 @@ void Swapchain::create() {
         .imageSharingMode = vk::SharingMode::eExclusive,
         .preTransform = surface_capabilities.currentTransform,
         .compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque,
-        .presentMode = surface_present_mode,
+        .presentMode = presentMode_,
         .clipped = true,
         .oldSwapchain = *swapchain,
     });
@@ -163,7 +171,7 @@ void Swapchain::recreate() {
     create();
 }
 
-bool Swapchain::next(const vk::Semaphore &image_available_semaphore) {
+bool Swapchain::advance(const vk::Semaphore &image_available_semaphore) {
     auto extents = ctx.window.get().getFramebufferSize();
     if (surfaceExtents.width != extents.width || surfaceExtents.height != extents.height) {
         recreate();
@@ -205,6 +213,6 @@ void Swapchain::present(const vk::Queue &queue, vk::PresentInfoKHR &present_info
         invalidate();
     }
 
-    if(invalid)
+    if (invalid)
         recreate();
 }

@@ -14,9 +14,7 @@ namespace glfw {
 
         Context(const Context &other) = delete;
 
-        Context(Context &&other) noexcept {
-            this->primary = std::exchange(other.primary, false);
-        }
+        Context(Context &&other) noexcept;
 
         Context &operator=(const Context &other) = delete;
 

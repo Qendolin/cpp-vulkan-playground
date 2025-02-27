@@ -9,8 +9,6 @@
 #include <glm/mat4x4.hpp>
 
 #include <vulkan/vulkan.hpp>
-#include <vulkan/vulkan_structs.hpp>
-#include <vulkan/vulkan_enums.hpp>
 
 class PlainImageData;
 class GraphicsBackend;

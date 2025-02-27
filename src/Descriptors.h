@@ -7,7 +7,7 @@ constexpr vk::DescriptorSetLayoutBinding DescriptorBinding(uint32_t index, vk::D
 }
 
 class DescriptorSetLayout {
-    template <typename ...Args>
+    template<typename... Args>
     static constexpr bool areBindingsSortedAndUnique(Args... args) {
         std::array indices{args.binding...};
         return std::ranges::is_sorted(indices) &&
@@ -17,14 +17,14 @@ class DescriptorSetLayout {
 public:
     const std::vector<vk::DescriptorSetLayoutBinding> bindings;
 
-    explicit DescriptorSetLayout(vk::Device device, vk::DescriptorSetLayoutCreateFlags flags, std::convertible_to<vk::DescriptorSetLayoutBinding> auto... args) :
-    bindings{args...},
-    layout(device.createDescriptorSetLayoutUnique({
-        .flags = flags,
-        .bindingCount = static_cast<uint32_t>(bindings.size()),
-        .pBindings = bindings.data()
-    })) {
-        if(!areBindingsSortedAndUnique(args...)) {
+    explicit DescriptorSetLayout(vk::Device device, vk::DescriptorSetLayoutCreateFlags flags, std::convertible_to<vk::DescriptorSetLayoutBinding> auto... args)
+        : bindings{args...},
+          layout(device.createDescriptorSetLayoutUnique({
+              .flags = flags,
+              .bindingCount = static_cast<uint32_t>(bindings.size()),
+              .pBindings = bindings.data()
+          })) {
+        if (!areBindingsSortedAndUnique(args...)) {
             Logger::panic("Binding indices must be sorted and unique");
         }
     }
@@ -35,7 +35,6 @@ public:
 
 private:
     const vk::UniqueDescriptorSetLayout layout;
-
 };
 
 class DescriptorSet {

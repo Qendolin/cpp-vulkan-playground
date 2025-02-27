@@ -3,11 +3,12 @@
 #include <filesystem>
 #include <fstream>
 
-#include "Logger.h"
-
 #include <shaderc/shaderc.hpp>
 #include <utility>
 #include <vulkan/vulkan.hpp>
+
+#include "Logger.h"
+
 
 static std::string read_file(const std::filesystem::path &path) {
     std::ifstream file(path, std::ios::binary);
@@ -43,7 +44,8 @@ class ShaderIncluder final : public shaderc::CompileOptions::IncluderInterface {
         }
     };
 
-    shaderc_include_result *GetInclude(const char *requested_source, shaderc_include_type type, const char *requesting_source, size_t include_depth) override {
+    shaderc_include_result *GetInclude(const char *requested_source, shaderc_include_type type, const char *requesting_source,
+                                       size_t /*include_depth*/) override {
         std::filesystem::path file_path;
         if (type == shaderc_include_type_relative) {
             file_path = std::filesystem::path(requesting_source).parent_path() / requested_source;
@@ -123,7 +125,7 @@ std::vector<uint32_t> ShaderCompiler::compile(const std::filesystem::path &sourc
     shaderc::SpvCompilationResult module = compiler->CompileGlslToSpv(preprocessed_code, kind, source_path.string().c_str(), options);
 
     if (module.GetCompilationStatus() != shaderc_compilation_status_success) {
-        Logger::panic("Shader compilation failed:\n" +  module.GetErrorMessage());
+        Logger::panic("Shader compilation failed:\n" + module.GetErrorMessage());
     }
 
     return {module.begin(), module.end()};

@@ -1,6 +1,7 @@
 #include "Image.h"
 
 #include <cmath>
+#include <utility>
 #include <filesystem>
 #include <ranges>
 #include <stb_image.h>
@@ -18,15 +19,18 @@ constexpr ImageResourceAccess ImageResourceAccess::FRAGMENT_SHADER_READ = {
 };
 
 constexpr ImageResourceAccess ImageResourceAccess::COLOR_ATTACHMENT_WRITE = {
-    .stage = vk::PipelineStageFlagBits2::eColorAttachmentOutput, .access = vk::AccessFlagBits2::eColorAttachmentWrite, .layout = vk::ImageLayout::eAttachmentOptimal
+    .stage = vk::PipelineStageFlagBits2::eColorAttachmentOutput, .access = vk::AccessFlagBits2::eColorAttachmentWrite,
+    .layout = vk::ImageLayout::eAttachmentOptimal
 };
 
 constexpr ImageResourceAccess ImageResourceAccess::DEPTH_ATTACHMENT_READ = {
-    .stage = vk::PipelineStageFlagBits2::eEarlyFragmentTests, .access = vk::AccessFlagBits2::eDepthStencilAttachmentRead, .layout = vk::ImageLayout::eAttachmentOptimal
+    .stage = vk::PipelineStageFlagBits2::eEarlyFragmentTests, .access = vk::AccessFlagBits2::eDepthStencilAttachmentRead,
+    .layout = vk::ImageLayout::eAttachmentOptimal
 };
 
 constexpr ImageResourceAccess ImageResourceAccess::DEPTH_ATTACHMENT_WRITE = {
-    .stage = vk::PipelineStageFlagBits2::eLateFragmentTests, .access = vk::AccessFlagBits2::eDepthStencilAttachmentWrite, .layout = vk::ImageLayout::eAttachmentOptimal
+    .stage = vk::PipelineStageFlagBits2::eLateFragmentTests, .access = vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+    .layout = vk::ImageLayout::eAttachmentOptimal
 };
 
 constexpr ImageResourceAccess ImageResourceAccess::PRESENT_SRC = {
@@ -49,7 +53,7 @@ static void copy_pixels(const unsigned char *src, unsigned char *dst, size_t ele
             if constexpr (SrcCh > 3) dst[i * DstCh + 3] = src[i * SrcCh + 3];
 
             // extend
-            if (DstCh > SrcCh) {
+            if constexpr (DstCh > SrcCh) {
                 // This might be wrong
                 if constexpr (DstCh - SrcCh >= 1) dst[i * DstCh + SrcCh] = 0;
                 if constexpr (DstCh - SrcCh >= 2) dst[i * DstCh + SrcCh + 1] = 0;
@@ -71,12 +75,30 @@ static void copy_pixels(const unsigned char *src, int src_channels, unsigned cha
     jmp[index](src, dst, elements);
 }
 
+PlainImageData::PlainImageData(std::span<unsigned char> pixels, uint32_t width, uint32_t height, vk::Format format) noexcept: data(pixels.data())
+    , width(width)
+    , height(height)
+    , pixels(pixels)
+    , format(format) {
+}
+
+PlainImageData::PlainImageData(std::unique_ptr<unsigned char> data, size_t size, uint32_t width, uint32_t height,
+                               vk::Format format) noexcept: data(data.release())
+                                                            , owning(true)
+                                                            , width(width)
+                                                            , height(height)
+                                                            , pixels(std::span{this->data, size})
+                                                            , format(format) {
+}
+
 PlainImageData::~PlainImageData() noexcept {
+    if (!owning) return;
     std::free(std::exchange(data, nullptr));
 }
 
 PlainImageData::PlainImageData(PlainImageData &&other) noexcept
     : data(std::exchange(other.data, nullptr)),
+      owning(std::exchange(other.owning, false)),
       width(std::exchange(other.width, 0)),
       height(std::exchange(other.height, 0)),
       pixels(std::exchange(other.pixels, {})),
@@ -87,8 +109,10 @@ PlainImageData &PlainImageData::operator=(PlainImageData &&other) noexcept {
     if (this == &other)
         return *this;
 
-    std::free(data);
+    if (owning)
+        std::free(std::exchange(data, nullptr));
     data = std::exchange(other.data, nullptr);
+    owning = std::exchange(other.owning, false);
     width = std::exchange(other.width, 0);
     height = std::exchange(other.height, 0);
     pixels = std::exchange(other.pixels, {});
@@ -102,20 +126,20 @@ PlainImageData PlainImageData::create(vk::Format format, int width, int height, 
     size_t elements = width * height;
     size_t size = elements * dst_channels;
     auto dst_data = static_cast<unsigned char *>(std::malloc(size));
-    if(src_data) {
+    if (src_data) {
         copy_pixels(src_data, src_channels, dst_data, dst_channels, elements);
     }
 
     return {
-        dst_data,
+        std::unique_ptr<unsigned char>(dst_data),
+        size,
         static_cast<uint32_t>(width), static_cast<uint32_t>(height),
-        std::span(dst_data, size),
         format
     };
 }
 
 void PlainImageData::copyChannels(PlainImageData &dst, std::initializer_list<int> mapping) const {
-    if(dst.width != width || dst.height != height) {
+    if (dst.width != width || dst.height != height) {
         Logger::panic("Image dimensions do not match");
     }
 
@@ -123,15 +147,15 @@ void PlainImageData::copyChannels(PlainImageData &dst, std::initializer_list<int
     uint32_t s_channels = vkuFormatComponentCount(static_cast<VkFormat>(format));
     uint32_t d_channels = vkuFormatComponentCount(static_cast<VkFormat>(dst.format));
 
-    if(channel_map.size() != s_channels) {
+    if (channel_map.size() != s_channels) {
         Logger::panic("Not enough channels specified in mapping");
     }
 
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
-            for (int sc = 0; sc < s_channels; ++sc) {
+    for (uint32_t y = 0; y < height; ++y) {
+        for (uint32_t x = 0; x < width; ++x) {
+            for (uint32_t sc = 0; sc < s_channels; ++sc) {
                 int dc = channel_map[sc];
-                if(dc < 0) continue;
+                if (dc < 0) continue;
 
                 size_t i = x + width * y;
                 size_t si = i * s_channels + sc;
@@ -165,15 +189,51 @@ PlainImageData PlainImageData::create(vk::Format format, const std::filesystem::
     stbi_uc *pixels = stbi_load(path.string().c_str(), &width, &height, &channels, result_channels);
 
     return {
-        pixels,
+        std::unique_ptr<unsigned char>(pixels),
+        static_cast<size_t>(width * height * result_channels),
         static_cast<uint32_t>(width), static_cast<uint32_t>(height),
-        std::span(pixels, width * height * result_channels),
         format
     };
 }
 
+void ImageResource::barrier(vk::Image image, vk::ImageSubresourceRange range, const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &begin,
+                            const ImageResourceAccess &end) {
+    vk::ImageMemoryBarrier2 barrier{
+        .srcStageMask = prevAccess.stage,
+        .srcAccessMask = prevAccess.access,
+        .dstStageMask = begin.stage,
+        .dstAccessMask = begin.access,
+        .oldLayout = prevAccess.layout,
+        .newLayout = begin.layout,
+        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .image = image,
+        .subresourceRange = range,
+    };
+    prevAccess = end;
+
+    cmd_buf.pipelineBarrier2({
+        .imageMemoryBarrierCount = 1,
+        .pImageMemoryBarriers = &barrier,
+    });
+}
+
 Image::Image(vma::UniqueImage &&image, vma::UniqueAllocation &&allocation, const ImageCreateInfo &create_info)
     : image(std::move(image)), allocation(std::move(allocation)), info(create_info) {
+}
+
+Image &Image::operator=(Image &&other) noexcept {
+    if (this == &other)
+        return *this;
+    image = std::move(other.image);
+    allocation = std::move(other.allocation);
+    info = other.info;
+    return *this;
+}
+
+Image::Image(Image &&other) noexcept: image(std::move(other.image)),
+                                      allocation(std::move(other.allocation)),
+                                      info(other.info) {
 }
 
 Image Image::create(const vma::Allocator &allocator, ImageCreateInfo create_info) {
@@ -188,9 +248,9 @@ Image Image::create(const vma::Allocator &allocator, ImageCreateInfo create_info
     //     .type = create_info.type,
     //     .usage = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
     // });
-    
+
     auto [image, allocation] = allocator.createImageUnique(
-        {
+        vk::ImageCreateInfo{
             .imageType = create_info.type,
             .format = create_info.format,
             .extent = {
@@ -205,15 +265,6 @@ Image Image::create(const vma::Allocator &allocator, ImageCreateInfo create_info
         });
 
     return {std::move(image), std::move(allocation), create_info};
-}
-
-Image Image::create(const vma::Allocator &allocator, const vk::CommandBuffer &cmd_buf, vk::Buffer staged_data, const ImageCreateInfo &create_info) {
-    Image image = create(allocator, create_info);
-
-    image.barrier(cmd_buf, ImageResourceAccess::TRANSFER_WRITE);
-    image.load(cmd_buf, 0, {}, staged_data);
-
-    return image;
 }
 
 void Image::load(const vk::CommandBuffer &cmd_buf, uint32_t level, vk::Extent3D region, const vk::Buffer &data) {
@@ -342,6 +393,18 @@ vk::UniqueImageView Image::createDefaultView(const vk::Device &device) {
     });
 }
 
+void Image::barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &begin, const ImageResourceAccess &end) {
+    ImageResource::barrier(*image, {
+                               .aspectMask = imageAspectFlags(),
+                               .levelCount = info.mip_levels,
+                               .layerCount = info.array_layers,
+                           }, cmd_buf, begin, end);
+}
+
+void Image::barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &single) {
+    barrier(cmd_buf, single, single);
+}
+
 
 vk::ImageAspectFlags Image::imageAspectFlags() const {
     switch (info.format) {
@@ -362,4 +425,15 @@ vk::ImageAspectFlags Image::imageAspectFlags() const {
                 Logger::panic("unsupported image format");
             return vk::ImageAspectFlagBits::eColor;
     }
+}
+
+ImageRef::ImageRef(vk::Image image, vk::Format format, vk::ImageSubresourceRange range): image(image), format(format), range(range) {
+}
+
+void ImageRef::barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &begin, const ImageResourceAccess &end) {
+    ImageResource::barrier(image, range, cmd_buf, begin, end);
+}
+
+void ImageRef::barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &single) {
+    barrier(cmd_buf, single, single);
 }

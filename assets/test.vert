@@ -9,7 +9,7 @@ layout (location = 0) out vec3 out_position_ws;
 layout (location = 1) out mat3 out_tbn;
 layout (location = 4) out vec2 out_tex_coord;
 
-layout (set = 0, binding = 0) uniform SceneUniforms {
+layout (std140, set = 0, binding = 0) uniform SceneUniforms {
     mat4 view;
     mat4 proj;
     vec4 camera;

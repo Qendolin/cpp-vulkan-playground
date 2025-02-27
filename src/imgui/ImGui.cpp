@@ -1,9 +1,12 @@
 #include "ImGui.h"
 
+#include <format>
+
 #include "../GraphicsBackend.h"
 #include "../Swapchain.h"
+#include "../Logger.h"
 
-void initImGui(const AppContext& ctx) {
+void initImGui(const AppContext &ctx) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO &io = ImGui::GetIO();
@@ -22,7 +25,11 @@ void initImGui(const AppContext& ctx) {
     init_info.ImageCount = ctx.swapchain->imageCount();
     init_info.UseDynamicRendering = true;
     init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-    init_info.CheckVkResultFn = [](VkResult result) { vk::detail::resultCheck(static_cast<vk::Result>(result), "ImGui"); };
+    init_info.CheckVkResultFn = [](VkResult result) {
+        if (result != VK_SUCCESS) {
+            Logger::panic(std::format("ImGui Vulkan Error: {}", vk::to_string(static_cast<vk::Result>(result))));
+        }
+    };
     vk::Format color_attachment_format = ctx.swapchain->colorFormatLinear();
     init_info.PipelineRenderingCreateInfo = vk::PipelineRenderingCreateInfo{
         .colorAttachmentCount = 1,

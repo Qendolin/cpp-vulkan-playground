@@ -1,6 +1,7 @@
 #include "Input.h"
 
 #include <algorithm>
+#include <GLFW/glfw3.h>
 
 #include "../Logger.h"
 #include "Window.h"
@@ -22,34 +23,35 @@ namespace glfw {
         }
 
         auto win_ptr = static_cast<GLFWwindow *>(window_);
-        storedKeyCallback_ = glfwSetKeyCallback(win_ptr, [](GLFWwindow *window, int key, int scancode, int action, int mods) {
+        storedKeyCallback_ = reinterpret_cast<void* (*)()>(glfwSetKeyCallback(win_ptr, [](GLFWwindow *window, int key, int scancode, int action, int mods) {
             instance->onKey(window, key, scancode, action, mods);
-        });
-        storedCurorPosCallback_ = glfwSetCursorPosCallback(win_ptr, [](GLFWwindow *window, double x, double y) {
+        }));
+        storedCurorPosCallback_ = reinterpret_cast<void* (*)()>(glfwSetCursorPosCallback(win_ptr, [](GLFWwindow *window, double x, double y) {
             instance->onCursorPos(window, x, y);
-        });
-        storedMouseButtonCallback_ = glfwSetMouseButtonCallback(win_ptr, [](GLFWwindow *window, int button, int action, int mods) {
-            instance->onMouseButton(window, button, action, mods);
-        });
-        storedScrollCallback_ = glfwSetScrollCallback(win_ptr, [](GLFWwindow *window, double dx, double dy) {
+        }));
+        storedMouseButtonCallback_ = reinterpret_cast<void* (*)()>(glfwSetMouseButtonCallback(
+            win_ptr, [](GLFWwindow *window, int button, int action, int mods) {
+                instance->onMouseButton(window, button, action, mods);
+            }));
+        storedScrollCallback_ = reinterpret_cast<void* (*)()>(glfwSetScrollCallback(win_ptr, [](GLFWwindow *window, double dx, double dy) {
             instance->onScroll(window, dx, dy);
-        });
-        storedCharCallback_ = glfwSetCharCallback(win_ptr, [](GLFWwindow *window, unsigned int codepoint) {
+        }));
+        storedCharCallback_ = reinterpret_cast<void* (*)()>(glfwSetCharCallback(win_ptr, [](GLFWwindow *window, unsigned int codepoint) {
             instance->onChar(window, codepoint);
-        });
-        storedWindowFocusCallback_ = glfwSetWindowFocusCallback(win_ptr, [](GLFWwindow *window, int focused) {
+        }));
+        storedWindowFocusCallback_ = reinterpret_cast<void* (*)()>(glfwSetWindowFocusCallback(win_ptr, [](GLFWwindow * /*window*/, int /*focused*/) {
             instance->invalidate();
-        });
+        }));
     }
 
     Input::~Input() {
         auto win_ptr = static_cast<GLFWwindow *>(window_);
-        glfwSetKeyCallback(win_ptr, static_cast<GLFWkeyfun>(storedKeyCallback_));
-        glfwSetCursorPosCallback(win_ptr, static_cast<GLFWcursorposfun>(storedCurorPosCallback_));
-        glfwSetMouseButtonCallback(win_ptr, static_cast<GLFWmousebuttonfun>(storedMouseButtonCallback_));
-        glfwSetScrollCallback(win_ptr, static_cast<GLFWscrollfun>(storedScrollCallback_));
-        glfwSetCharCallback(win_ptr, static_cast<GLFWcharfun>(storedCharCallback_));
-        glfwSetWindowFocusCallback(win_ptr, static_cast<GLFWwindowfocusfun>(storedWindowFocusCallback_));
+        glfwSetKeyCallback(win_ptr, reinterpret_cast<GLFWkeyfun>(storedKeyCallback_));
+        glfwSetCursorPosCallback(win_ptr, reinterpret_cast<GLFWcursorposfun>(storedCurorPosCallback_));
+        glfwSetMouseButtonCallback(win_ptr, reinterpret_cast<GLFWmousebuttonfun>(storedMouseButtonCallback_));
+        glfwSetScrollCallback(win_ptr, reinterpret_cast<GLFWscrollfun>(storedScrollCallback_));
+        glfwSetCharCallback(win_ptr, reinterpret_cast<GLFWcharfun>(storedCharCallback_));
+        glfwSetWindowFocusCallback(win_ptr, reinterpret_cast<GLFWwindowfocusfun>(storedWindowFocusCallback_));
 
         instance = nullptr;
     }
@@ -131,7 +133,7 @@ namespace glfw {
         return glfwGetWindowAttrib(static_cast<GLFWwindow *>(window_), GLFW_FOCUSED) == GLFW_TRUE;
     }
 
-    void Input::onKey(GLFWwindow *window, int key, int scancode, int action, int mods) {
+    void Input::onKey(GLFWwindow * /*window*/, int key, int scancode, int action, int mods) {
         if (key < 0 || key >= keysWrite_.size()) return; // special keys, e.g.: mute sound
         if (action == GLFW_PRESS) {
             // set the pressed and down bit
@@ -149,7 +151,7 @@ namespace glfw {
             reg.callback(key, scancode, action, mods);
     }
 
-    void Input::onCursorPos(GLFWwindow *window, double x, double y) {
+    void Input::onCursorPos(GLFWwindow * /*window*/, double x, double y) {
         mousePosWrite_.x = static_cast<float>(x);
         mousePosWrite_.y = static_cast<float>(y);
 
@@ -157,7 +159,7 @@ namespace glfw {
             reg.callback(static_cast<float>(x), static_cast<float>(y));
     }
 
-    void Input::onMouseButton(GLFWwindow *window, int button, int action, int mods) {
+    void Input::onMouseButton(GLFWwindow * /*window*/, int button, int action, int mods) {
         if (action == GLFW_PRESS) {
             // set the pressed and down bit
             mouseButtonsWrite_[button] |= State::PressedBit;
@@ -174,7 +176,7 @@ namespace glfw {
             reg.callback(button, action, mods);
     }
 
-    void Input::onScroll(GLFWwindow *window, double dx, double dy) {
+    void Input::onScroll(GLFWwindow * /*window*/, double dx, double dy) {
         scrollDeltaWrite_.x += static_cast<float>(dx);
         scrollDeltaWrite_.y += static_cast<float>(dy);
 
@@ -182,7 +184,7 @@ namespace glfw {
             reg.callback(static_cast<float>(dx), static_cast<float>(dy));
     }
 
-    void Input::onChar(GLFWwindow *window, unsigned int codepoint) {
+    void Input::onChar(GLFWwindow * /*window*/, unsigned int codepoint) {
         for (auto &&reg: charCallbacks_)
             reg.callback(codepoint);
     }

@@ -6,7 +6,7 @@ layout (location = 4) in vec2 in_tex_coord;
 
 layout (location = 0) out vec4 out_color;
 
-layout (set = 0, binding = 0) uniform SceneUniforms {
+layout (std140, set = 0, binding = 0) uniform SceneUniforms {
     mat4 view;
     mat4 proj;
     vec4 camera;
@@ -15,7 +15,7 @@ layout (set = 0, binding = 0) uniform SceneUniforms {
 layout (set = 1, binding = 0) uniform sampler2D u_tex_albedo;
 layout (set = 1, binding = 1) uniform sampler2D u_tex_normal;
 layout (set = 1, binding = 2) uniform sampler2D u_tex_omr;
-layout (set = 1, binding = 3) uniform MaterialUniforms {
+layout (std140, set = 1, binding = 3) uniform MaterialUniforms {
     vec4 albedoFactors;
     vec4 mrnFactors; // metalness, roughness, normal strength
 } material_uniforms;

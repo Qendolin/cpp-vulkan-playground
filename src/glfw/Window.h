@@ -2,33 +2,11 @@
 
 #include <string>
 #include <vulkan/vulkan.hpp>
-#include <GLFW/glfw3.h>
+
+struct GLFWwindow;
+struct GLFWmonitor;
 
 namespace glfw {
-    enum class ClientApi : int {
-        OpenGL = GLFW_OPENGL_API,
-        OpenGLES = GLFW_OPENGL_ES_API,
-        None = GLFW_NO_API
-    };
-
-    enum class ContextCreationApi : int {
-        Native = GLFW_NATIVE_CONTEXT_API,
-        EGL = GLFW_EGL_CONTEXT_API,
-        OSMesa = GLFW_OSMESA_CONTEXT_API
-    };
-
-    enum class ContextRobustness : int {
-        None = GLFW_NO_ROBUSTNESS,
-        NoResetNotification = GLFW_NO_RESET_NOTIFICATION,
-        LoseContextOnReset = GLFW_LOSE_CONTEXT_ON_RESET
-    };
-
-    enum class ContextReleaseBehavior : int {
-        Any = GLFW_ANY_RELEASE_BEHAVIOR,
-        Flush = GLFW_RELEASE_BEHAVIOR_FLUSH,
-        None = GLFW_RELEASE_BEHAVIOR_NONE,
-    };
-
     struct WindowCreateInfo {
         int width;
         int height;
@@ -46,8 +24,8 @@ namespace glfw {
         bool scaleToMonitor = false;
         bool scaleFramebuffer = true;
         bool mousePassthrough = false;
-        int positionX = static_cast<int>(GLFW_ANY_POSITION);
-        int positionY = static_cast<int>(GLFW_ANY_POSITION);
+        int positionX = static_cast<int>(0x80000000);
+        int positionY = static_cast<int>(0x80000000);
         int redBits = 8;
         int greenBits = 8;
         int blueBits = 8;
@@ -55,17 +33,10 @@ namespace glfw {
         int depthBits = 24;
         int stencilBits = 8;
         int samples = 0;
-        int refreshRate = GLFW_DONT_CARE;
+        int refreshRate = -1;
         bool stereo = false;
         bool srgbCapable = false;
         bool doublebuffer = true;
-        ClientApi clientApi = ClientApi::OpenGL;
-        ContextCreationApi contextCreationApi = ContextCreationApi::Native;
-        int contextVersionMajor = 1;
-        int contextVersionMinor = 0;
-        ContextRobustness contextRobustness = ContextRobustness::None;
-        ContextReleaseBehavior contextReleaseBehavior = ContextReleaseBehavior::Any;
-        bool contextDebug = false;
     };
 
     class Window {
@@ -116,16 +87,9 @@ namespace glfw {
 
         UniqueWindow &operator=(const UniqueWindow &) = delete;
 
-        UniqueWindow(UniqueWindow &&other) noexcept
-            : window(std::exchange(other.window, Window{})) {
-        }
+        UniqueWindow(UniqueWindow &&other) noexcept;
 
-        UniqueWindow &operator=(UniqueWindow &&other) noexcept {
-            if (this != &other) {
-                window = std::exchange(other.window, Window{});
-            }
-            return *this;
-        }
+        UniqueWindow &operator=(UniqueWindow &&other) noexcept;
 
         const Window *operator->() const noexcept {
             return &window;
@@ -147,16 +111,11 @@ namespace glfw {
             reset();
         }
 
-        void reset() noexcept {
-            if (auto *handle = static_cast<GLFWwindow *>(window)) {
-                glfwDestroyWindow(handle);
-                window = Window{};
-            }
-        }
+        void reset() noexcept;
 
         [[nodiscard]] Window &get() noexcept { return window; }
 
-        [[nodiscard]] const Window& get() const noexcept { return window; }
+        [[nodiscard]] const Window &get() const noexcept { return window; }
 
         explicit operator GLFWwindow *() const { return static_cast<GLFWwindow *>(window); }
     };

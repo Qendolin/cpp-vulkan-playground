@@ -40,7 +40,7 @@ namespace util {
 
         template<typename InputIt>
         constexpr static_vector(InputIt first, InputIt last) {
-            size_type count = std::distance(first, last);
+            size_t count = std::distance(first, last);
             if (count > N) throw std::out_of_range("Range exceeds static_vector capacity");
             std::copy(first, last, storage_.begin());
             length_ = count;
@@ -56,8 +56,8 @@ namespace util {
 
         [[nodiscard]] constexpr bool empty() const noexcept { return length_ == 0; }
         [[nodiscard]] constexpr bool full() const noexcept { return length_ == N; }
-        [[nodiscard]] constexpr size_type size() const noexcept { return length_; }
-        [[nodiscard]] static constexpr size_type capacity() noexcept { return N; }
+        [[nodiscard]] constexpr size_t size() const noexcept { return length_; }
+        [[nodiscard]] static constexpr size_t capacity() noexcept { return N; }
         [[nodiscard]] constexpr T *data() noexcept { return storage_.data(); }
         [[nodiscard]] constexpr const T *data() const noexcept { return storage_.data(); }
 
@@ -104,15 +104,15 @@ namespace util {
             return storage_[length_ - 1];
         }
 
-        constexpr T &operator[](size_type index) { return storage_[index]; }
-        constexpr const T &operator[](size_type index) const { return storage_[index]; }
+        constexpr T &operator[](size_t index) { return storage_[index]; }
+        constexpr const T &operator[](size_t index) const { return storage_[index]; }
 
-        constexpr T &at(size_type index) {
+        constexpr T &at(size_t index) {
             if (index >= length_) throw std::out_of_range("Index out of range");
             return storage_[index];
         }
 
-        constexpr const T &at(size_type index) const {
+        constexpr const T &at(size_t index) const {
             if (index >= length_) throw std::out_of_range("Index out of range");
             return storage_[index];
         }

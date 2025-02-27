@@ -1,14 +1,15 @@
 #pragma once
 
+#include <vector>
+#include <cstdint>
+
 #include <vulkan/vulkan.hpp>
 #include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
-
-#include "GraphicsBackend.h"
 
 class WindowContext;
 
 class Swapchain {
-    const WindowContext& ctx;
+    const WindowContext &ctx;
 
     vk::SurfaceFormatKHR surfaceFormat = {.format = vk::Format::eUndefined, .colorSpace = vk::ColorSpaceKHR::eSrgbNonlinear};
     vk::Format surfaceFormatLinear = vk::Format::eUndefined;
@@ -32,7 +33,7 @@ class Swapchain {
     bool invalid = true;
 
 public:
-    explicit Swapchain(const WindowContext& ctx) : ctx(ctx) {
+    explicit Swapchain(const WindowContext &ctx) : ctx(ctx) {
         create();
     }
 
@@ -112,7 +113,7 @@ public:
         invalid = true;
     }
 
-    bool next(const vk::Semaphore &image_available_semaphore);
+    [[nodiscard]] bool advance(const vk::Semaphore &image_available_semaphore);
 
     void present(const vk::Queue &queue, vk::PresentInfoKHR &present_info);
 };

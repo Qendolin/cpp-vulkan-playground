@@ -1,17 +1,14 @@
 #pragma once
 
 #include <filesystem>
-#include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
-#include <vulkan/vulkan.hpp>
-#include <vulkan/vulkan_enums.hpp>
+#include <span>
 
-class StagingLeaseManager;
-class StagedUploadManager;
-class StagingBufferAllocator;
-class GraphicsBackend;
+#include <vulkan/vulkan.hpp>
+#include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
 
 class PlainImageData {
     unsigned char *data;
+    bool owning = false;
 
 public:
     uint32_t width;
@@ -19,21 +16,12 @@ public:
     std::span<unsigned char> pixels;
     vk::Format format;
 
-    PlainImageData() noexcept
-        : data(nullptr)
-          , width(0)
-          , height(0)
-          , pixels({})
-          , format(vk::Format::eUndefined) {
+    PlainImageData() noexcept : data(nullptr), width(0), height(0), pixels({}), format(vk::Format::eUndefined) {
     }
 
-    PlainImageData(unsigned char *data, uint32_t width, uint32_t height, std::span<unsigned char> pixels, vk::Format format) noexcept
-        : data(data)
-          , width(width)
-          , height(height)
-          , pixels(pixels)
-          , format(format) {
-    }
+    PlainImageData(std::span<unsigned char> pixels, uint32_t width, uint32_t height, vk::Format format) noexcept;
+
+    PlainImageData(std::unique_ptr<unsigned char> data, size_t size, uint32_t width, uint32_t height, vk::Format format) noexcept;
 
     ~PlainImageData() noexcept;
 
@@ -49,7 +37,7 @@ public:
         return static_cast<bool>(data);
     }
 
-    void copyChannels(PlainImageData& dst, std::initializer_list<int> mapping) const;
+    void copyChannels(PlainImageData &dst, std::initializer_list<int> mapping) const;
 
     void fill(std::initializer_list<int> channels, std::initializer_list<unsigned char> values);
 
@@ -94,26 +82,8 @@ class ImageResource {
 protected:
     ImageResourceAccess prevAccess = {};
 
-    void barrier(vk::Image image, vk::ImageSubresourceRange range, const vk::CommandBuffer &cmd_buf, const ImageResourceAccess& begin, const ImageResourceAccess& end) {
-        vk::ImageMemoryBarrier2 barrier {
-            .srcStageMask = prevAccess.stage,
-            .srcAccessMask = prevAccess.access,
-            .dstStageMask = begin.stage,
-            .dstAccessMask = begin.access,
-            .oldLayout = prevAccess.layout,
-            .newLayout = begin.layout,
-            .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-            .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-            .image = image,
-            .subresourceRange = range,
-        };
-        prevAccess = end;
-
-        cmd_buf.pipelineBarrier2({
-            .imageMemoryBarrierCount = 1,
-            .pImageMemoryBarriers = &barrier,
-        });
-    }
+    void barrier(vk::Image image, vk::ImageSubresourceRange range, const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &begin,
+                 const ImageResourceAccess &end);
 };
 
 
@@ -137,27 +107,13 @@ public:
 
     Image(const Image &other) = delete;
 
-    Image(Image &&other) noexcept
-        : image(std::move(other.image)),
-          allocation(std::move(other.allocation)),
-          info(other.info)
-    {
-    }
-
-    Image &operator=(const Image &other) = delete;
-
-    Image &operator=(Image &&other) noexcept {
-        if(this == &other)
-            return *this;
-        image = std::move(other.image);
-        allocation = std::move(other.allocation);
-        info = other.info;
-        return *this;
-    }
+    Image(Image &&other) noexcept;
 
     static Image create(const vma::Allocator &allocator, ImageCreateInfo create_info);
 
-    static Image create(const vma::Allocator &allocator, const vk::CommandBuffer &cmd_buf, vk::Buffer staged_data, const ImageCreateInfo &create_info);
+    Image &operator=(const Image &other) = delete;
+
+    Image &operator=(Image &&other) noexcept;
 
     void load(const vk::CommandBuffer &cmd_buf, uint32_t level, vk::Extent3D region, const vk::Buffer &data);
 
@@ -165,17 +121,9 @@ public:
 
     vk::UniqueImageView createDefaultView(const vk::Device &device);
 
-    void barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess& begin, const ImageResourceAccess& end) {
-        ImageResource::barrier(*image, {
-            .aspectMask = imageAspectFlags(),
-            .levelCount = info.mip_levels,
-            .layerCount = info.array_layers,
-        }, cmd_buf, begin, end);
-    }
+    void barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &begin, const ImageResourceAccess &end);
 
-    void barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess& single) {
-        barrier(cmd_buf, single, single);
-    }
+    void barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &single);
 
 private:
     vma::UniqueImage image;
@@ -191,14 +139,9 @@ public:
     vk::Format format;
     vk::ImageSubresourceRange range;
 
-    explicit ImageRef(vk::Image image, vk::Format format, vk::ImageSubresourceRange range) : image(image), format(format), range(range) {
-    }
+    explicit ImageRef(vk::Image image, vk::Format format, vk::ImageSubresourceRange range);
 
-    void barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess& begin, const ImageResourceAccess& end) {
-        ImageResource::barrier(image, range, cmd_buf, begin, end);
-    }
+    void barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &begin, const ImageResourceAccess &end);
 
-    void barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess& single) {
-        barrier(cmd_buf, single, single);
-    }
+    void barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &single);
 };
