@@ -1,13 +1,11 @@
 #pragma once
-#include <vector>
 #include <array>
 #include <filesystem>
 #include <glm/fwd.hpp>
-
+#include <glm/mat4x4.hpp>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
-#include <glm/mat4x4.hpp>
-
+#include <vector>
 #include <vulkan/vulkan.hpp>
 
 class PlainImageData;
@@ -22,28 +20,16 @@ namespace gltf {
 
         static constexpr std::array bindingDescriptors{
             vk::VertexInputBindingDescription2EXT{
-                .binding = 0,
-                .stride = sizeof(Vertex::pos),
-                .inputRate = vk::VertexInputRate::eVertex,
-                .divisor = 1
+                .binding = 0, .stride = sizeof(Vertex::pos), .inputRate = vk::VertexInputRate::eVertex, .divisor = 1
             },
             vk::VertexInputBindingDescription2EXT{
-                .binding = 1,
-                .stride = sizeof(Vertex::normal),
-                .inputRate = vk::VertexInputRate::eVertex,
-                .divisor = 1
+                .binding = 1, .stride = sizeof(Vertex::normal), .inputRate = vk::VertexInputRate::eVertex, .divisor = 1
             },
             vk::VertexInputBindingDescription2EXT{
-                .binding = 2,
-                .stride = sizeof(Vertex::tangent),
-                .inputRate = vk::VertexInputRate::eVertex,
-                .divisor = 1
+                .binding = 2, .stride = sizeof(Vertex::tangent), .inputRate = vk::VertexInputRate::eVertex, .divisor = 1
             },
             vk::VertexInputBindingDescription2EXT{
-                .binding = 3,
-                .stride = sizeof(Vertex::texCoord),
-                .inputRate = vk::VertexInputRate::eVertex,
-                .divisor = 1
+                .binding = 3, .stride = sizeof(Vertex::texCoord), .inputRate = vk::VertexInputRate::eVertex, .divisor = 1
             }
         };
 
@@ -111,4 +97,4 @@ namespace gltf {
     };
 
     SceneData load(const std::filesystem::path &path);
-}
+} // namespace gltf

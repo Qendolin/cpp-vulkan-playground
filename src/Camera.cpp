@@ -17,11 +17,13 @@ void Camera::updateProjectionMatrix_() {
     aspect_ = a;
     float f = 1.0f / std::tan(fov_ / 2.0f);
     // This is a reversed projection matrix with an infite far plane.
+    // clang-format off
     projectionMatrix_ = glm::mat4(
         f / a, 0.0f, 0.0f, 0.0f,
         0.0f, f, 0.0f, 0.0f,
         0.0f, 0.0f, 0.0f, -1.0f,
         0.0f, 0.0f, nearPlane_, 0.0f);
+    // clang-format on
 }
 
 void Camera::updateViewMatrix() {

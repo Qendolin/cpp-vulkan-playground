@@ -4,23 +4,18 @@
 
 #include "Logger.h"
 
-CommandPool::CommandPool(vk::Device device, vk::Queue queue, uint32_t queue_index, UseMode mode): device_(device), queue_(queue), mode_(mode) {
+CommandPool::CommandPool(vk::Device device, vk::Queue queue, uint32_t queue_index, UseMode mode)
+    : device_(device), queue_(queue), mode_(mode) {
     vk::CommandPoolCreateFlags flags = {};
     if (mode == UseMode::Single || mode == UseMode::Reset)
         flags |= vk::CommandPoolCreateFlagBits::eTransient;
-    pool = device.createCommandPoolUnique({
-        .flags = flags,
-        .queueFamilyIndex = queue_index
-    });
+    pool = device.createCommandPoolUnique({.flags = flags, .queueFamilyIndex = queue_index});
 
     fence_ = device.createFenceUnique({});
 }
 
 vk::CommandBuffer CommandPool::create() const {
-    auto buffer = device_.allocateCommandBuffers({
-        .commandPool = *pool,
-        .commandBufferCount = 1,
-    }).front();
+    auto buffer = device_.allocateCommandBuffers({.commandPool = *pool, .commandBufferCount = 1}).front();
     if (mode_ == UseMode::Single)
         buffer.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
     return buffer;
@@ -33,44 +28,29 @@ void CommandPool::reset() const {
     device_.resetCommandPool(*pool, flags);
 }
 
-void CommandPool::free(vk::CommandBuffer buffer) const {
-    device_.freeCommandBuffers(*pool, buffer);
-}
+void CommandPool::free(vk::CommandBuffer buffer) const { device_.freeCommandBuffers(*pool, buffer); }
 
-void CommandPool::freeAll() const {
-    device_.resetCommandPool(*pool, vk::CommandPoolResetFlagBits::eReleaseResources);
-}
+void CommandPool::freeAll() const { device_.resetCommandPool(*pool, vk::CommandPoolResetFlagBits::eReleaseResources); }
 
 void CommandPool::submit(vk::CommandBuffer buffer) const {
     if (mode_ == UseMode::Single)
         buffer.end();
 
-    queue_.submit(vk::SubmitInfo{
-        .commandBufferCount = 1,
-        .pCommandBuffers = &buffer
-    });
+    queue_.submit(vk::SubmitInfo{.commandBufferCount = 1, .pCommandBuffers = &buffer});
 }
 
 void CommandPool::submit(vk::CommandBuffer buffer, vk::Fence fence) const {
     if (mode_ == UseMode::Single)
         buffer.end();
 
-    queue_.submit(vk::SubmitInfo{
-                      .commandBufferCount = 1,
-                      .pCommandBuffers = &buffer
-                  },
-                  fence);
+    queue_.submit(vk::SubmitInfo{.commandBufferCount = 1, .pCommandBuffers = &buffer}, fence);
 }
 
 void CommandPool::submitAndWait(vk::CommandBuffer buffer) {
     if (mode_ == UseMode::Single)
         buffer.end();
 
-    queue_.submit(vk::SubmitInfo{
-                      .commandBufferCount = 1,
-                      .pCommandBuffers = &buffer
-                  },
-                  *fence_);
+    queue_.submit(vk::SubmitInfo{.commandBufferCount = 1, .pCommandBuffers = &buffer}, *fence_);
 
     while (device_.waitForFences(*fence_, true, UINT64_MAX) == vk::Result::eTimeout) {
     }
@@ -78,14 +58,12 @@ void CommandPool::submitAndWait(vk::CommandBuffer buffer) {
 }
 
 
-Commands::Commands(vk::Device device, vk::Queue queue, uint32_t queue_index, UseMode mode): device_(device), queue_(queue), mode_(mode), trash(device) {
+Commands::Commands(vk::Device device, vk::Queue queue, uint32_t queue_index, UseMode mode)
+    : device_(device), queue_(queue), mode_(mode), trash(device) {
     vk::CommandPoolCreateFlags flags = {};
     if (mode == UseMode::Single || mode == UseMode::Reset)
         flags |= vk::CommandPoolCreateFlagBits::eTransient;
-    pool_ = device.createCommandPoolUnique({
-        .flags = flags,
-        .queueFamilyIndex = queue_index
-    });
+    pool_ = device.createCommandPoolUnique({.flags = flags, .queueFamilyIndex = queue_index});
 
     fence_ = device.createFenceUnique({});
 }
@@ -128,14 +106,14 @@ vk::CommandBuffer *Commands::operator->() noexcept {
     return &active_;
 }
 
-const vk::CommandBuffer &Commands::operator *() const noexcept {
+const vk::CommandBuffer &Commands::operator*() const noexcept {
     if (!active_) {
         Logger::error("Command buffer not begun");
     }
     return active_;
 }
 
-vk::CommandBuffer &Commands::operator *() noexcept {
+vk::CommandBuffer &Commands::operator*() noexcept {
     if (!active_) {
         Logger::error("Command buffer not begun");
     }
@@ -150,12 +128,14 @@ vk::CommandBuffer Commands::get() const {
 }
 
 void Commands::free(vk::CommandBuffer buffer) const {
-    if (!buffer) return;
+    if (!buffer)
+        return;
     device_.freeCommandBuffers(*pool_, buffer);
 }
 
 void Commands::wait(vk::Fence fence, bool reset) const {
-    if (!fence) return;
+    if (!fence)
+        return;
 
     while (device_.waitForFences(fence, true, UINT64_MAX) == vk::Result::eTimeout) {
     }
@@ -177,10 +157,7 @@ void Commands::submit() {
     }
 
     active_.end();
-    queue_.submit(vk::SubmitInfo{
-                      .commandBufferCount = 1,
-                      .pCommandBuffers = &active_
-                  }, *fence_);
+    queue_.submit(vk::SubmitInfo{.commandBufferCount = 1, .pCommandBuffers = &active_}, *fence_);
 
     wait(*fence_, true);
     trash.clear();
@@ -198,10 +175,7 @@ vk::CommandBuffer Commands::submit(vk::Fence fence) {
     }
 
     active_.end();
-    queue_.submit(vk::SubmitInfo{
-                      .commandBufferCount = 1,
-                      .pCommandBuffers = &active_
-                  }, fence);
+    queue_.submit(vk::SubmitInfo{.commandBufferCount = 1, .pCommandBuffers = &active_}, fence);
 
     return std::exchange(active_, {});
 }

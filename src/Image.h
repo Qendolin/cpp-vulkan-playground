@@ -2,9 +2,8 @@
 
 #include <filesystem>
 #include <span>
-
-#include <vulkan/vulkan.hpp>
 #include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
+#include <vulkan/vulkan.hpp>
 
 class PlainImageData {
     unsigned char *data;
@@ -16,8 +15,7 @@ public:
     std::span<unsigned char> pixels;
     vk::Format format;
 
-    PlainImageData() noexcept : data(nullptr), width(0), height(0), pixels({}), format(vk::Format::eUndefined) {
-    }
+    PlainImageData() noexcept : data(nullptr), width(0), height(0), pixels({}), format(vk::Format::eUndefined) {}
 
     PlainImageData(std::span<unsigned char> pixels, uint32_t width, uint32_t height, vk::Format format) noexcept;
 
@@ -33,9 +31,7 @@ public:
 
     PlainImageData &operator=(const PlainImageData &other) = delete;
 
-    explicit operator bool() const {
-        return static_cast<bool>(data);
-    }
+    explicit operator bool() const { return static_cast<bool>(data); }
 
     void copyChannels(PlainImageData &dst, std::initializer_list<int> mapping) const;
 
@@ -82,15 +78,17 @@ class ImageResource {
 protected:
     ImageResourceAccess prevAccess = {};
 
-    void barrier(vk::Image image, vk::ImageSubresourceRange range, const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &begin,
-                 const ImageResourceAccess &end);
+    void
+    barrier(vk::Image image,
+            vk::ImageSubresourceRange range,
+            const vk::CommandBuffer &cmd_buf,
+            const ImageResourceAccess &begin,
+            const ImageResourceAccess &end);
 };
 
 
 class Image : ImageResource {
-    [[nodiscard]] vk::Image getImage() const {
-        return *image;
-    }
+    [[nodiscard]] vk::Image getImage() const { return *image; }
 
     [[nodiscard]] vk::ImageSubresourceRange getResourceRange() const {
         return {

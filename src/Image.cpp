@@ -1,35 +1,42 @@
 #include "Image.h"
 
 #include <cmath>
-#include <utility>
 #include <filesystem>
 #include <ranges>
 #include <stb_image.h>
+#include <utility>
 #include <vulkan/utility/vk_format_utils.h>
 
 #include "GraphicsBackend.h"
 #include "Logger.h"
 
 constexpr ImageResourceAccess ImageResourceAccess::TRANSFER_WRITE = {
-    .stage = vk::PipelineStageFlagBits2::eTransfer, .access = vk::AccessFlagBits2::eTransferWrite, .layout = vk::ImageLayout::eTransferDstOptimal
+    .stage = vk::PipelineStageFlagBits2::eTransfer,
+    .access = vk::AccessFlagBits2::eTransferWrite,
+    .layout = vk::ImageLayout::eTransferDstOptimal
 };
 
 constexpr ImageResourceAccess ImageResourceAccess::FRAGMENT_SHADER_READ = {
-    .stage = vk::PipelineStageFlagBits2::eFragmentShader, .access = vk::AccessFlagBits2::eShaderRead, .layout = vk::ImageLayout::eTransferDstOptimal
+    .stage = vk::PipelineStageFlagBits2::eFragmentShader,
+    .access = vk::AccessFlagBits2::eShaderRead,
+    .layout = vk::ImageLayout::eTransferDstOptimal
 };
 
 constexpr ImageResourceAccess ImageResourceAccess::COLOR_ATTACHMENT_WRITE = {
-    .stage = vk::PipelineStageFlagBits2::eColorAttachmentOutput, .access = vk::AccessFlagBits2::eColorAttachmentWrite,
+    .stage = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+    .access = vk::AccessFlagBits2::eColorAttachmentWrite,
     .layout = vk::ImageLayout::eAttachmentOptimal
 };
 
 constexpr ImageResourceAccess ImageResourceAccess::DEPTH_ATTACHMENT_READ = {
-    .stage = vk::PipelineStageFlagBits2::eEarlyFragmentTests, .access = vk::AccessFlagBits2::eDepthStencilAttachmentRead,
+    .stage = vk::PipelineStageFlagBits2::eEarlyFragmentTests,
+    .access = vk::AccessFlagBits2::eDepthStencilAttachmentRead,
     .layout = vk::ImageLayout::eAttachmentOptimal
 };
 
 constexpr ImageResourceAccess ImageResourceAccess::DEPTH_ATTACHMENT_WRITE = {
-    .stage = vk::PipelineStageFlagBits2::eLateFragmentTests, .access = vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+    .stage = vk::PipelineStageFlagBits2::eLateFragmentTests,
+    .access = vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
     .layout = vk::ImageLayout::eAttachmentOptimal
 };
 
@@ -38,8 +45,9 @@ constexpr ImageResourceAccess ImageResourceAccess::PRESENT_SRC = {
 };
 
 template<int SrcCh, int DstCh>
-    requires (SrcCh >= 1) && (SrcCh <= 4) && (DstCh >= 1) && (DstCh <= 4)
+    requires(SrcCh >= 1) && (SrcCh <= 4) && (DstCh >= 1) && (DstCh <= 4)
 static void copy_pixels(const unsigned char *src, unsigned char *dst, size_t elements) {
+    // clang-format off
     for (size_t i = 0; i < elements; i++) {
         // always copy first
         dst[i * DstCh] = src[i * SrcCh];
@@ -62,6 +70,7 @@ static void copy_pixels(const unsigned char *src, unsigned char *dst, size_t ele
             }
         }
     }
+    // clang-format on
 }
 
 static void copy_pixels(const unsigned char *src, int src_channels, unsigned char *dst, int dst_chanels, size_t elements) {
@@ -75,24 +84,26 @@ static void copy_pixels(const unsigned char *src, int src_channels, unsigned cha
     jmp[index](src, dst, elements);
 }
 
-PlainImageData::PlainImageData(std::span<unsigned char> pixels, uint32_t width, uint32_t height, vk::Format format) noexcept: data(pixels.data())
-    , width(width)
-    , height(height)
-    , pixels(pixels)
-    , format(format) {
-}
+PlainImageData::PlainImageData(std::span<unsigned char> pixels, uint32_t width, uint32_t height, vk::Format format) noexcept
+    : data(pixels.data()), //
+      width(width),
+      height(height),
+      pixels(pixels),
+      format(format) {}
 
-PlainImageData::PlainImageData(std::unique_ptr<unsigned char> data, size_t size, uint32_t width, uint32_t height,
-                               vk::Format format) noexcept: data(data.release())
-                                                            , owning(true)
-                                                            , width(width)
-                                                            , height(height)
-                                                            , pixels(std::span{this->data, size})
-                                                            , format(format) {
-}
+PlainImageData::PlainImageData(
+        std::unique_ptr<unsigned char> data, size_t size, uint32_t width, uint32_t height, vk::Format format
+) noexcept
+    : data(data.release()), //
+      owning(true),
+      width(width),
+      height(height),
+      pixels(std::span{this->data, size}),
+      format(format) {}
 
 PlainImageData::~PlainImageData() noexcept {
-    if (!owning) return;
+    if (!owning)
+        return;
     std::free(std::exchange(data, nullptr));
 }
 
@@ -102,8 +113,7 @@ PlainImageData::PlainImageData(PlainImageData &&other) noexcept
       width(std::exchange(other.width, 0)),
       height(std::exchange(other.height, 0)),
       pixels(std::exchange(other.pixels, {})),
-      format(std::exchange(other.format, vk::Format::eUndefined)) {
-}
+      format(std::exchange(other.format, vk::Format::eUndefined)) {}
 
 PlainImageData &PlainImageData::operator=(PlainImageData &&other) noexcept {
     if (this == &other)
@@ -130,12 +140,7 @@ PlainImageData PlainImageData::create(vk::Format format, int width, int height, 
         copy_pixels(src_data, src_channels, dst_data, dst_channels, elements);
     }
 
-    return {
-        std::unique_ptr<unsigned char>(dst_data),
-        size,
-        static_cast<uint32_t>(width), static_cast<uint32_t>(height),
-        format
-    };
+    return {std::unique_ptr<unsigned char>(dst_data), size, static_cast<uint32_t>(width), static_cast<uint32_t>(height), format};
 }
 
 void PlainImageData::copyChannels(PlainImageData &dst, std::initializer_list<int> mapping) const {
@@ -155,7 +160,8 @@ void PlainImageData::copyChannels(PlainImageData &dst, std::initializer_list<int
         for (uint32_t x = 0; x < width; ++x) {
             for (uint32_t sc = 0; sc < s_channels; ++sc) {
                 int dc = channel_map[sc];
-                if (dc < 0) continue;
+                if (dc < 0)
+                    continue;
 
                 size_t i = x + width * y;
                 size_t si = i * s_channels + sc;
@@ -189,15 +195,18 @@ PlainImageData PlainImageData::create(vk::Format format, const std::filesystem::
     stbi_uc *pixels = stbi_load(path.string().c_str(), &width, &height, &channels, result_channels);
 
     return {
-        std::unique_ptr<unsigned char>(pixels),
-        static_cast<size_t>(width * height * result_channels),
-        static_cast<uint32_t>(width), static_cast<uint32_t>(height),
-        format
+        std::unique_ptr<unsigned char>(pixels), static_cast<size_t>(width * height * result_channels),
+        static_cast<uint32_t>(width), static_cast<uint32_t>(height), format
     };
 }
 
-void ImageResource::barrier(vk::Image image, vk::ImageSubresourceRange range, const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &begin,
-                            const ImageResourceAccess &end) {
+void ImageResource::barrier(
+        vk::Image image,
+        vk::ImageSubresourceRange range,
+        const vk::CommandBuffer &cmd_buf,
+        const ImageResourceAccess &begin,
+        const ImageResourceAccess &end
+) {
     vk::ImageMemoryBarrier2 barrier{
         .srcStageMask = prevAccess.stage,
         .srcAccessMask = prevAccess.access,
@@ -219,8 +228,7 @@ void ImageResource::barrier(vk::Image image, vk::ImageSubresourceRange range, co
 }
 
 Image::Image(vma::UniqueImage &&image, vma::UniqueAllocation &&allocation, const ImageCreateInfo &create_info)
-    : image(std::move(image)), allocation(std::move(allocation)), info(create_info) {
-}
+    : image(std::move(image)), allocation(std::move(allocation)), info(create_info) {}
 
 Image &Image::operator=(Image &&other) noexcept {
     if (this == &other)
@@ -231,14 +239,13 @@ Image &Image::operator=(Image &&other) noexcept {
     return *this;
 }
 
-Image::Image(Image &&other) noexcept: image(std::move(other.image)),
-                                      allocation(std::move(other.allocation)),
-                                      info(other.info) {
-}
+Image::Image(Image &&other) noexcept
+    : image(std::move(other.image)), allocation(std::move(other.allocation)), info(other.info) {}
 
 Image Image::create(const vma::Allocator &allocator, ImageCreateInfo create_info) {
     if (create_info.mip_levels == -1) {
-        create_info.mip_levels = static_cast<uint32_t>(std::floor(std::log2(std::max(create_info.width, create_info.height)))) + 1;
+        create_info.mip_levels =
+                static_cast<uint32_t>(std::floor(std::log2(std::max(create_info.width, create_info.height)))) + 1;
     }
 
     // TODO: VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT
@@ -246,40 +253,41 @@ Image Image::create(const vma::Allocator &allocator, ImageCreateInfo create_info
     // auto properties = physical_device.getImageFormatProperties2({
     //     .format = create_info.format,
     //     .type = create_info.type,
-    //     .usage = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+    //     .usage = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst |
+    //     vk::ImageUsageFlagBits::eSampled,
     // });
 
     auto [image, allocation] = allocator.createImageUnique(
-        vk::ImageCreateInfo{
-            .imageType = create_info.type,
-            .format = create_info.format,
-            .extent = {
-                .width = create_info.width, .height = create_info.height, .depth = create_info.depth
+            vk::ImageCreateInfo{
+                .imageType = create_info.type,
+                .format = create_info.format,
+                .extent = {.width = create_info.width, .height = create_info.height, .depth = create_info.depth},
+                .mipLevels = create_info.mip_levels,
+                .arrayLayers = create_info.array_layers,
+                .usage = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst |
+                         vk::ImageUsageFlagBits::eSampled,
             },
-            .mipLevels = create_info.mip_levels,
-            .arrayLayers = create_info.array_layers,
-            .usage = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
-        }, {
-            .usage = vma::MemoryUsage::eAuto,
-            .requiredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal,
-        });
+            {
+                .usage = vma::MemoryUsage::eAuto,
+                .requiredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal,
+            }
+    );
 
     return {std::move(image), std::move(allocation), create_info};
 }
 
 void Image::load(const vk::CommandBuffer &cmd_buf, uint32_t level, vk::Extent3D region, const vk::Buffer &data) {
-    if (region.width == 0) region.width = info.width;
-    if (region.height == 0) region.height = info.height;
-    if (region.depth == 0) region.depth = info.depth;
+    if (region.width == 0)
+        region.width = info.width;
+    if (region.height == 0)
+        region.height = info.height;
+    if (region.depth == 0)
+        region.depth = info.depth;
 
     barrier(cmd_buf, ImageResourceAccess::TRANSFER_WRITE);
 
     vk::BufferImageCopy image_copy = {
-        .imageSubresource = {
-            .aspectMask = imageAspectFlags(),
-            .mipLevel = level,
-            .layerCount = 1,
-        },
+        .imageSubresource = {.aspectMask = imageAspectFlags(), .mipLevel = level, .layerCount = 1},
         .imageExtent = region,
     };
     cmd_buf.copyBufferToImage(data, *image, vk::ImageLayout::eTransferDstOptimal, image_copy);
@@ -292,13 +300,14 @@ void Image::generateMipmaps(const vk::CommandBuffer &cmd_buf) {
         .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
         .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
         .image = *image,
-        .subresourceRange = {
-            .aspectMask = vk::ImageAspectFlagBits::eColor,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = info.array_layers
-        }
+        .subresourceRange =
+                {
+                    .aspectMask = vk::ImageAspectFlagBits::eColor,
+                    .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount = info.array_layers,
+                },
     };
 
     // TODO:
@@ -325,33 +334,32 @@ void Image::generateMipmaps(const vk::CommandBuffer &cmd_buf) {
             barrier.srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
             barrier.dstStageMask = vk::PipelineStageFlagBits2::eTransfer;
 
-            cmd_buf.pipelineBarrier2({
-                .imageMemoryBarrierCount = 1,
-                .pImageMemoryBarriers = &barrier
-            });
+            cmd_buf.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier});
         }
 
         vk::ImageBlit blit = {
-            .srcSubresource = {
-                .aspectMask = vk::ImageAspectFlagBits::eColor,
-                .mipLevel = lvl - 1,
-                .baseArrayLayer = 0,
-                .layerCount = info.array_layers,
-            },
+            .srcSubresource =
+                    {
+                        .aspectMask = vk::ImageAspectFlagBits::eColor,
+                        .mipLevel = lvl - 1,
+                        .baseArrayLayer = 0,
+                        .layerCount = info.array_layers,
+                    },
             .srcOffsets = std::array{vk::Offset3D{0, 0, 0}, vk::Offset3D{level_width, level_height, 1}},
-            .dstSubresource = {
-                .aspectMask = vk::ImageAspectFlagBits::eColor,
-                .mipLevel = lvl,
-                .baseArrayLayer = 0,
-                .layerCount = info.array_layers,
-            },
+            .dstSubresource =
+                    {
+                        .aspectMask = vk::ImageAspectFlagBits::eColor,
+                        .mipLevel = lvl,
+                        .baseArrayLayer = 0,
+                        .layerCount = info.array_layers,
+                    },
             .dstOffsets = std::array{vk::Offset3D{0, 0, 0}, vk::Offset3D{next_level_width, next_level_height, 1}}
         };
 
         cmd_buf.blitImage(
-            *image, vk::ImageLayout::eTransferSrcOptimal,
-            *image, vk::ImageLayout::eTransferDstOptimal,
-            blit, vk::Filter::eLinear);
+                *image, vk::ImageLayout::eTransferSrcOptimal, *image, vk::ImageLayout::eTransferDstOptimal, blit,
+                vk::Filter::eLinear
+        );
 
         level_width = next_level_width;
         level_height = next_level_height;
@@ -367,10 +375,7 @@ void Image::generateMipmaps(const vk::CommandBuffer &cmd_buf) {
         barrier.srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
         barrier.dstStageMask = vk::PipelineStageFlagBits2::eTransfer;
 
-        cmd_buf.pipelineBarrier2({
-            .imageMemoryBarrierCount = 1,
-            .pImageMemoryBarriers = &barrier
-        });
+        cmd_buf.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier});
     }
 
     prevAccess = {
@@ -385,20 +390,15 @@ vk::UniqueImageView Image::createDefaultView(const vk::Device &device) {
         .image = *image,
         .viewType = static_cast<vk::ImageViewType>(info.type),
         .format = info.format,
-        .subresourceRange = {
-            .aspectMask = vk::ImageAspectFlagBits::eColor,
-            .levelCount = info.mip_levels,
-            .layerCount = info.array_layers
-        }
+        .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = info.mip_levels, .layerCount = info.array_layers},
     });
 }
 
 void Image::barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &begin, const ImageResourceAccess &end) {
-    ImageResource::barrier(*image, {
-                               .aspectMask = imageAspectFlags(),
-                               .levelCount = info.mip_levels,
-                               .layerCount = info.array_layers,
-                           }, cmd_buf, begin, end);
+    ImageResource::barrier(
+            *image, {.aspectMask = imageAspectFlags(), .levelCount = info.mip_levels, .layerCount = info.array_layers},
+            cmd_buf, begin, end
+    );
 }
 
 void Image::barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &single) {
@@ -427,8 +427,8 @@ vk::ImageAspectFlags Image::imageAspectFlags() const {
     }
 }
 
-ImageRef::ImageRef(vk::Image image, vk::Format format, vk::ImageSubresourceRange range): image(image), format(format), range(range) {
-}
+ImageRef::ImageRef(vk::Image image, vk::Format format, vk::ImageSubresourceRange range)
+    : image(image), format(format), range(range) {}
 
 void ImageRef::barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &begin, const ImageResourceAccess &end) {
     ImageResource::barrier(image, range, cmd_buf, begin, end);

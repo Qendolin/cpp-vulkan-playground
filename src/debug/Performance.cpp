@@ -1,10 +1,9 @@
 #include "Performance.h"
 
+#include <cmath>
 #include <format>
-#define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui.h>
 #include <string>
-#include <cmath>
 
 void FrameTimes::draw() {
     using namespace ImGui;
@@ -21,22 +20,34 @@ void FrameTimes::draw() {
     singleIndex = (singleIndex + 1) % static_cast<int>(single.size());
     auto sixty_fps_line_point = GetCursorScreenPos() + ImVec2{0, 48};
     std::string frame_time_text = std::format("Frame Time - {:4.1f} ms", current * 1000);
-    PlotHistogram("##frame_time", &single.front(), single.size(), singleIndex, frame_time_text.c_str(), 0.0f, 1000.0f / 30.0f, ImVec2{256, 96});
+    PlotHistogram(
+            "##frame_time", &single.front(), single.size(), singleIndex, frame_time_text.c_str(), 0.0f, 1000.0f / 30.0f,
+            ImVec2{256, 96}
+    );
     draw_list->AddLine(sixty_fps_line_point, sixty_fps_line_point + ImVec2{256, 0}, sixty_fps_line_color);
 
     sixty_fps_line_point = GetCursorScreenPos() + ImVec2{0, 48};
     std::string frame_avg_text = std::format("Avg. Frame Time - {:4.1f} ms", currentAvg * 1000);
-    PlotLines("##frame_time_avg", &avg.front(), avg.size(), cumulativeIndex, frame_avg_text.c_str(), 0, 1000.0f / 30.0f, ImVec2{256, 96});
+    PlotLines(
+            "##frame_time_avg", &avg.front(), avg.size(), cumulativeIndex, frame_avg_text.c_str(), 0, 1000.0f / 30.0f,
+            ImVec2{256, 96}
+    );
     draw_list->AddLine(sixty_fps_line_point, sixty_fps_line_point + ImVec2{256, 0}, sixty_fps_line_color);
 
     sixty_fps_line_point = GetCursorScreenPos() + ImVec2{0, 48};
     std::string frame_min_text = std::format("Min. Frame Time - {:4.1f} ms", currentMin * 1000);
-    PlotLines("##frame_time_min", &min.front(), min.size(), cumulativeIndex, frame_min_text.c_str(), 0, 1000.0f / 30.0f, ImVec2{256, 96});
+    PlotLines(
+            "##frame_time_min", &min.front(), min.size(), cumulativeIndex, frame_min_text.c_str(), 0, 1000.0f / 30.0f,
+            ImVec2{256, 96}
+    );
     draw_list->AddLine(sixty_fps_line_point, sixty_fps_line_point + ImVec2{256, 0}, sixty_fps_line_color);
 
     sixty_fps_line_point = GetCursorScreenPos() + ImVec2{0, 48};
     std::string frame_max_text = std::format("Max. Frame Time - {:4.1f} ms", currentMax * 1000);
-    PlotLines("##frame_time_max", &max.front(), max.size(), cumulativeIndex, frame_max_text.c_str(), 0, 1000.0f / 30.0f, ImVec2{256, 96});
+    PlotLines(
+            "##frame_time_max", &max.front(), max.size(), cumulativeIndex, frame_max_text.c_str(), 0, 1000.0f / 30.0f,
+            ImVec2{256, 96}
+    );
     draw_list->AddLine(sixty_fps_line_point, sixty_fps_line_point + ImVec2{256, 0}, sixty_fps_line_color);
 
     End();

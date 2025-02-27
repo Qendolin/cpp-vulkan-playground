@@ -1,8 +1,8 @@
 #pragma once
 
+#include <cpptrace/cpptrace.hpp>
 #include <source_location>
 #include <string>
-#include <cpptrace/cpptrace.hpp>
 
 class Logger {
     static std::string shortFileName(std::string file_name);

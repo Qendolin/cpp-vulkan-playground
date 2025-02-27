@@ -1,8 +1,8 @@
 #include "Context.h"
 
+#include <GLFW/glfw3.h>
 #include <iostream>
 #include <utility>
-#include <GLFW/glfw3.h>
 
 namespace glfw {
     void Context::defaultErrorCallback(int error, const char *description) {
@@ -25,12 +25,11 @@ namespace glfw {
         }
     }
 
-    Context::Context(Context &&other) noexcept {
-        this->primary = std::exchange(other.primary, false);
-    }
+    Context::Context(Context &&other) noexcept { this->primary = std::exchange(other.primary, false); }
 
     Context::~Context() {
-        if(!primary) return;
+        if (!primary)
+            return;
         glfwTerminate();
         isInitialized = false;
     }
@@ -40,4 +39,4 @@ namespace glfw {
         const char **extensions = glfwGetRequiredInstanceExtensions(&count);
         return {extensions, extensions + count};
     }
-}
+} // namespace glfw

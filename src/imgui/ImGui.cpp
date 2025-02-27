@@ -3,8 +3,8 @@
 #include <format>
 
 #include "../GraphicsBackend.h"
-#include "../Swapchain.h"
 #include "../Logger.h"
+#include "../Swapchain.h"
 
 void initImGui(const AppContext &ctx) {
     IMGUI_CHECKVERSION();

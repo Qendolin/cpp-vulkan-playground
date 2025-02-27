@@ -2,11 +2,11 @@
 
 #include <array>
 #include <functional>
+#include <glm/vec2.hpp>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <glm/vec2.hpp>
 
 
 namespace glfw {
@@ -51,10 +51,7 @@ namespace glfw {
         typedef std::function<void(int key, int scancode, int action, int mods)> KeyCallback;
         typedef std::function<void(unsigned int codepoint)> CharCallback;
 
-        enum class MouseMode {
-            Release,
-            Capture
-        };
+        enum class MouseMode { Release, Capture };
 
     private:
         template<typename T>
@@ -82,13 +79,9 @@ namespace glfw {
             return static_cast<State>(static_cast<uint8_t>(lhs) & static_cast<uint8_t>(rhs));
         }
 
-        friend constexpr State &operator|=(State &lhs, State rhs) {
-            return lhs = lhs | rhs;
-        }
+        friend constexpr State &operator|=(State &lhs, State rhs) { return lhs = lhs | rhs; }
 
-        friend constexpr State &operator&=(State &lhs, State rhs) {
-            return lhs = lhs & rhs;
-        }
+        friend constexpr State &operator&=(State &lhs, State rhs) { return lhs = lhs & rhs; }
 
         const glfw::Window &window_;
         double timeRead_ = 0;
@@ -109,11 +102,11 @@ namespace glfw {
         bool stateInvalid_ = true;
 
         int nextCallbackRegistrationId_ = 1;
-        std::vector<CallbackRegistration<MousePosCallback> > mousePosCallbacks_;
-        std::vector<CallbackRegistration<MouseButtonCallback> > mouseButtonCallbacks_;
-        std::vector<CallbackRegistration<ScrollCallback> > scrollCallbacks_;
-        std::vector<CallbackRegistration<KeyCallback> > keyCallbacks_;
-        std::vector<CallbackRegistration<CharCallback> > charCallbacks_;
+        std::vector<CallbackRegistration<MousePosCallback>> mousePosCallbacks_;
+        std::vector<CallbackRegistration<MouseButtonCallback>> mouseButtonCallbacks_;
+        std::vector<CallbackRegistration<ScrollCallback>> scrollCallbacks_;
+        std::vector<CallbackRegistration<KeyCallback>> keyCallbacks_;
+        std::vector<CallbackRegistration<CharCallback>> charCallbacks_;
 
         void *(*storedKeyCallback_)() = nullptr;
 
@@ -162,18 +155,14 @@ namespace glfw {
         /**
          * @return `true` if the mouse is captured (aka. grabbed).
          */
-        [[nodiscard]] bool isMouseCaptured() const {
-            return mouseCaptured_;
-        }
+        [[nodiscard]] bool isMouseCaptured() const { return mouseCaptured_; }
 
         void captureMouse();
 
         /**
          * @return `true` if the mouse is **not** captured (aka. grabbed).
          */
-        [[nodiscard]] bool isMouseReleased() const {
-            return !mouseCaptured_;
-        }
+        [[nodiscard]] bool isMouseReleased() const { return !mouseCaptured_; }
 
         void releaseMouse();
 
@@ -187,9 +176,7 @@ namespace glfw {
             this->mouseMode_ = mode;
         }
 
-        [[nodiscard]] MouseMode mouseMode() const {
-            return mouseMode_;
-        }
+        [[nodiscard]] MouseMode mouseMode() const { return mouseMode_; }
 
         void centerMouse() const;
 
@@ -244,17 +231,13 @@ namespace glfw {
          * @param key one of `GLFW_KEY_*`. Note: This uses the physical position in the US layout.
          * @return `true` if the given key has been pressed down since the last frame.
          */
-        [[nodiscard]] bool isKeyPress(int key) const {
-            return (keysRead_[key] & State::PressedBit) != State::Zero;
-        }
+        [[nodiscard]] bool isKeyPress(int key) const { return (keysRead_[key] & State::PressedBit) != State::Zero; }
 
         /**
          * @param key one of `GLFW_KEY_*`
          * @return `true` if the given key has been released up since the last frame.
          */
-        [[nodiscard]] bool isKeyRelease(int key) const {
-            return (keysRead_[key] & State::ReleasedBit) != State::Zero;
-        }
+        [[nodiscard]] bool isKeyRelease(int key) const { return (keysRead_[key] & State::ReleasedBit) != State::Zero; }
 
         /**
          * Register a mouse positon callback
@@ -321,9 +304,7 @@ namespace glfw {
         void update();
 
         // sets a flag that will poll the true input state on the next update
-        void invalidate() {
-            stateInvalid_ = true;
-        }
+        void invalidate() { stateInvalid_ = true; }
 
         void onKey(GLFWwindow *window, int key, int scancode, int action, int mods);
 
@@ -335,4 +316,4 @@ namespace glfw {
 
         void onChar(GLFWwindow *window, unsigned int codepoint);
     };
-}
+} // namespace glfw

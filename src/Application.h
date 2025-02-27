@@ -1,6 +1,5 @@
 #pragma once
 
-
 class ShaderLoader;
 class GraphicsBackend;
 

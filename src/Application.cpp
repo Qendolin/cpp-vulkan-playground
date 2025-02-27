@@ -1,29 +1,26 @@
 #include "Application.h"
 
 #include <cstring>
-#include <tracy/Tracy.hpp>
-
 #include <glfw/glfw3.h>
-
-#include "GraphicsBackend.h"
-#include "Swapchain.h"
-#include "Logger.h"
-#include "ShaderObject.h"
-#include "gltf/Gltf.h"
-
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/fast_trigonometry.hpp>
+#include <tracy/Tracy.hpp>
 
 #include "Camera.h"
 #include "CommandPool.h"
-#include "Image.h"
 #include "Descriptors.h"
 #include "FrameResource.h"
+#include "GraphicsBackend.h"
+#include "Image.h"
+#include "Logger.h"
+#include "ShaderObject.h"
 #include "StagingBuffer.h"
+#include "Swapchain.h"
 #include "UniformBuffer.h"
 #include "debug/Performance.h"
 #include "glfw/Input.h"
+#include "gltf/Gltf.h"
 #include "imgui/ImGui.h"
 
 Application::Application() = default;
@@ -31,12 +28,12 @@ Application::Application() = default;
 Application::~Application() = default;
 
 // Utility type for uniforms structs, ensures sequential write on assignment
-#define MEMCPY_ASSIGNMENT(T)                     \
-    T& operator=(const T& other) {               \
-        if (this != &other) {                    \
-            std::memcpy(this, &other, sizeof(T)); /* NOLINT(*-undefined-memory-manipulation) */ \
-        }                                        \
-        return *this;                            \
+#define MEMCPY_ASSIGNMENT(T)                                                                                           \
+    T &operator=(const T &other) {                                                                                     \
+        if (this != &other) {                                                                                          \
+            std::memcpy(this, &other, sizeof(T)); /* NOLINT(*-undefined-memory-manipulation) */                        \
+        }                                                                                                              \
+        return *this;                                                                                                  \
     }
 
 #if defined(__clang__)
@@ -117,8 +114,9 @@ inline auto create_default_resources(Commands &commands, IStagingBuffer &staging
     return std::tuple{std::move(default_albedo), std::move(default_normal), std::move(default_omr)};
 }
 
-inline SceneUploadData upload_gltf_data(const AppContext &ctx, gltf::SceneData &gltf_data, DescriptorAllocator &descriptor_allocator,
-                                        DescriptorSetLayout &descriptor_layout) {
+inline SceneUploadData upload_gltf_data(
+        const AppContext &ctx, gltf::SceneData &gltf_data, DescriptorAllocator &descriptor_allocator, DescriptorSetLayout &descriptor_layout
+) {
     SceneUploadData result;
 
     const auto &allocator = *ctx.device.allocator;
@@ -134,15 +132,15 @@ inline SceneUploadData upload_gltf_data(const AppContext &ctx, gltf::SceneData &
     result.defaultOmrView = result.defaultOmr.createDefaultView(device);
 
     float max_anisotropy = ctx.device.physicalDevice.getProperties().limits.maxSamplerAnisotropy;
-    result.sampler = device.createSamplerUnique({
-        .magFilter = vk::Filter::eLinear,
-        .minFilter = vk::Filter::eLinear,
-        .mipmapMode = vk::SamplerMipmapMode::eLinear,
-        .anisotropyEnable = true,
-        .maxAnisotropy = max_anisotropy,
-        .maxLod = vk::LodClampNone,
-        .borderColor = vk::BorderColor::eFloatOpaqueBlack
-    });
+    result.sampler = device.createSamplerUnique(
+            {.magFilter = vk::Filter::eLinear,
+             .minFilter = vk::Filter::eLinear,
+             .mipmapMode = vk::SamplerMipmapMode::eLinear,
+             .anisotropyEnable = true,
+             .maxAnisotropy = max_anisotropy,
+             .maxLod = vk::LodClampNone,
+             .borderColor = vk::BorderColor::eFloatOpaqueBlack}
+    );
 
     result.images.reserve(gltf_data.images.size());
     result.views.reserve(gltf_data.images.size());
@@ -185,16 +183,16 @@ inline SceneUploadData upload_gltf_data(const AppContext &ctx, gltf::SceneData &
             .albedoFectors = material.albedoFactor,
             .mrnFactors = glm::vec4(material.metaillicFactor, material.roughnessFactor, material.normalFactor, 0.0),
         };
-        vk::WriteDescriptorSetInlineUniformBlock mat_info = {
-            .dataSize = sizeof(MaterialUniforms),
-            .pData = &material_uniforms
-        };
-        device.updateDescriptorSets({
-                                        descriptor_set.write(0).setPImageInfo(&albedo_image_info),
-                                        descriptor_set.write(1).setPImageInfo(&normal_image_info),
-                                        descriptor_set.write(2).setPImageInfo(&orm_image_info),
-                                        descriptor_set.write(3).setPNext(&mat_info),
-                                    }, {});
+        vk::WriteDescriptorSetInlineUniformBlock mat_info = {.dataSize = sizeof(MaterialUniforms), .pData = &material_uniforms};
+        device.updateDescriptorSets(
+                {
+                    descriptor_set.write(0).setPImageInfo(&albedo_image_info),
+                    descriptor_set.write(1).setPImageInfo(&normal_image_info),
+                    descriptor_set.write(2).setPImageInfo(&orm_image_info),
+                    descriptor_set.write(3).setPNext(&mat_info),
+                },
+                {}
+        );
     }
 
     vma::AllocationCreateInfo allocation_create_info = {
@@ -203,19 +201,23 @@ inline SceneUploadData upload_gltf_data(const AppContext &ctx, gltf::SceneData &
     };
     auto buffer_usage = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst;
 
-    std::tie(result.positions, result.positionsAlloc) =
-            allocator.createBufferUnique({.size = gltf_data.vertex_position_data.size(), .usage = buffer_usage}, allocation_create_info);
-    std::tie(result.normals, result.normalsAlloc) =
-            allocator.createBufferUnique({.size = gltf_data.vertex_normal_data.size(), .usage = buffer_usage}, allocation_create_info);
-    std::tie(result.tangents, result.tangentsAlloc) =
-            allocator.createBufferUnique({.size = gltf_data.vertex_tangent_data.size(), .usage = buffer_usage}, allocation_create_info);
-    std::tie(result.texcoords, result.texcoordsAlloc) =
-            allocator.createBufferUnique({.size = gltf_data.vertex_texcoord_data.size(), .usage = buffer_usage}, allocation_create_info);
-    std::tie(result.indices, result.indicesAlloc) =
-            allocator.createBufferUnique({
-                                             .size = gltf_data.index_data.size(),
-                                             .usage = vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst
-                                         }, allocation_create_info);
+    std::tie(result.positions, result.positionsAlloc) = allocator.createBufferUnique(
+            {.size = gltf_data.vertex_position_data.size(), .usage = buffer_usage}, allocation_create_info
+    );
+    std::tie(result.normals, result.normalsAlloc) = allocator.createBufferUnique(
+            {.size = gltf_data.vertex_normal_data.size(), .usage = buffer_usage}, allocation_create_info
+    );
+    std::tie(result.tangents, result.tangentsAlloc) = allocator.createBufferUnique(
+            {.size = gltf_data.vertex_tangent_data.size(), .usage = buffer_usage}, allocation_create_info
+    );
+    std::tie(result.texcoords, result.texcoordsAlloc) = allocator.createBufferUnique(
+            {.size = gltf_data.vertex_texcoord_data.size(), .usage = buffer_usage}, allocation_create_info
+    );
+    std::tie(result.indices, result.indicesAlloc) = allocator.createBufferUnique(
+            {.size = gltf_data.index_data.size(),
+             .usage = vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst},
+            allocation_create_info
+    );
 
     staging.upload(commands, gltf_data.vertex_position_data, *result.positions);
     staging.upload(commands, gltf_data.vertex_normal_data, *result.normals);
@@ -235,8 +237,10 @@ void Application::run() {
     auto &input = *ctx.window.input;
     auto &swapchain = *ctx.swapchain;
     assert(ctx.swapchain != nullptr); // clion/clangd needs this
-    auto transfer_commands = CommandPool(device, ctx.device.transferQueue, ctx.device.transferQueueFamily, CommandPool::UseMode::Single);
-    auto one_time_commands = CommandPool(device, ctx.device.mainQueue, ctx.device.mainQueueFamily, CommandPool::UseMode::Single);
+    auto transfer_commands =
+            CommandPool(device, ctx.device.transferQueue, ctx.device.transferQueueFamily, CommandPool::UseMode::Single);
+    auto one_time_commands =
+            CommandPool(device, ctx.device.mainQueue, ctx.device.mainQueueFamily, CommandPool::UseMode::Single);
 
     // TracyVkCtx(
     //     static_cast<VkPhysicalDevice>(ctx.device.physicalDevice),
@@ -247,23 +251,25 @@ void Application::run() {
 
     DescriptorAllocator descriptor_allocator(device);
     DescriptorSetLayout scene_descriptor_layout(
-        device, {},
-        DescriptorBinding(0, vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment) // uniforms
+            device, {},
+            DescriptorBinding(
+                    0, vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
+            ) // uniforms
     );
     DescriptorSetLayout material_descriptor_layout(
-        device, {},
-        DescriptorBinding(0, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment), // albedo
-        DescriptorBinding(1, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment), // normal
-        DescriptorBinding(2, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment), // omr
-        DescriptorBinding(3, vk::DescriptorType::eInlineUniformBlock, vk::ShaderStageFlagBits::eFragment, sizeof(MaterialUniforms)) // mat factors
+            device, {},
+            DescriptorBinding(0, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment), // albedo
+            DescriptorBinding(1, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment), // normal
+            DescriptorBinding(2, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment), // omr
+            DescriptorBinding(
+                    3, vk::DescriptorType::eInlineUniformBlock, vk::ShaderStageFlagBits::eFragment, sizeof(MaterialUniforms)
+            ) // material factors
     );
 
     gltf::SceneData gltf_data = gltf::load("assets/sponza.glb");
     auto scene_data = upload_gltf_data(ctx, gltf_data, descriptor_allocator, material_descriptor_layout);
 
-    auto uniform_buffers = frameResources.create([&] {
-        return UnifromBuffer<SceneUniforms>(allocator);
-    });
+    auto uniform_buffers = frameResources.create([&] { return UnifromBuffer<SceneUniforms>(allocator); });
 
     auto scene_descriptor_sets = frameResources.create([&descriptor_allocator, &scene_descriptor_layout] {
         return descriptor_allocator.allocate(scene_descriptor_layout);
@@ -271,17 +277,15 @@ void Application::run() {
 
     for (int i = 0; i < frameResources.size(); ++i) {
         vk::DescriptorBufferInfo uniform_buffer_info = {
-            .buffer = uniform_buffers.at(i).buffer(),
-            .offset = 0,
-            .range = sizeof(SceneUniforms)
+            .buffer = uniform_buffers.at(i).buffer(), .offset = 0, .range = sizeof(SceneUniforms)
         };
-        device.updateDescriptorSets({
-                                        scene_descriptor_sets.at(i).write(0).setBufferInfo(uniform_buffer_info)
-                                    }, {});
+        device.updateDescriptorSets({scene_descriptor_sets.at(i).write(0).setBufferInfo(uniform_buffer_info)}, {});
     }
 
     auto draw_command_pools = frameResources.create([&]() {
-        return std::make_unique<CommandPool>(device, ctx.device.mainQueue, ctx.device.mainQueueFamily, CommandPool::UseMode::Reset);
+        return std::make_unique<CommandPool>(
+                device, ctx.device.mainQueue, ctx.device.mainQueueFamily, CommandPool::UseMode::Reset
+        );
     });
 
     auto loader = ShaderLoader();
@@ -289,7 +293,9 @@ void Application::run() {
     loader.debug = true;
 #endif
     std::array descriptor_set_layouts = {scene_descriptor_layout.get(), material_descriptor_layout.get()};
-    vk::PushConstantRange push_constant_range = {.stageFlags = vk::ShaderStageFlagBits::eVertex, .offset = 0, .size = sizeof(glm::mat4)};
+    vk::PushConstantRange push_constant_range = {
+        .stageFlags = vk::ShaderStageFlagBits::eVertex, .offset = 0, .size = sizeof(glm::mat4)
+    };
     std::array push_constant_ranges = {push_constant_range};
 
     const auto load_shader = [&]() {
@@ -299,7 +305,9 @@ void Application::run() {
     };
     auto shader = load_shader();
 
-    const auto create_semaphore = [&] { return device.createSemaphoreUnique(vk::SemaphoreCreateInfo{}); };
+    const auto create_semaphore = [&] {
+        return device.createSemaphoreUnique(vk::SemaphoreCreateInfo{});
+    };
     auto image_available_semaphores = frameResources.create(create_semaphore);
     auto render_finished_semaphores = frameResources.create(create_semaphore);
     const auto create_signaled_fence = [&] {
@@ -381,23 +389,19 @@ void Application::run() {
         camera.updateViewMatrix();
 
         SceneUniforms uniforms = {
-            .view = camera.viewMatrix(),
-            .proj = camera.projectionMatrix(),
-            .camera = glm::vec4(camera.position, 1.0)
+            .view = camera.viewMatrix(), .proj = camera.projectionMatrix(), .camera = glm::vec4(camera.position, 1.0)
         };
 
         uniform_buffers->front() = uniforms;
 
-        ImageRef color_attachment(swapchain.colorImage(), swapchain.colorFormatSrgb(), {
-                                      .aspectMask = vk::ImageAspectFlagBits::eColor,
-                                      .levelCount = 1,
-                                      .layerCount = 1,
-                                  });
-        ImageRef depth_attachment(swapchain.depthImage(), swapchain.depthFormat(), {
-                                      .aspectMask = vk::ImageAspectFlagBits::eDepth,
-                                      .levelCount = 1,
-                                      .layerCount = 1,
-                                  });
+        ImageRef color_attachment(
+                swapchain.colorImage(), swapchain.colorFormatSrgb(),
+                {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1}
+        );
+        ImageRef depth_attachment(
+                swapchain.depthImage(), swapchain.depthFormat(),
+                {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1}
+        );
 
         auto &draw_commands = draw_command_pools.current();
         draw_commands.reset();
@@ -405,7 +409,9 @@ void Application::run() {
         cmd_buf.begin(vk::CommandBufferBeginInfo{.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
 
         color_attachment.barrier(cmd_buf, ImageResourceAccess::COLOR_ATTACHMENT_WRITE);
-        depth_attachment.barrier(cmd_buf, ImageResourceAccess::DEPTH_ATTACHMENT_READ, ImageResourceAccess::DEPTH_ATTACHMENT_WRITE);
+        depth_attachment.barrier(
+                cmd_buf, ImageResourceAccess::DEPTH_ATTACHMENT_READ, ImageResourceAccess::DEPTH_ATTACHMENT_WRITE
+        );
 
         vk::RenderingAttachmentInfoKHR color_attachment_info{
             .imageView = swapchain.colorViewSrgb(),
@@ -432,15 +438,7 @@ void Application::run() {
         PipelineConfig pipeline_config = {
             .vertexBindingDescriptions = gltf::Vertex::bindingDescriptors,
             .vertexAttributeDescriptions = gltf::Vertex::attributeDescriptors,
-            .viewports = {
-                {
-                    vk::Viewport{
-                        0.0f, swapchain.height(),
-                        swapchain.width(), -swapchain.height(),
-                        0.0f, 1.0f
-                    }
-                }
-            },
+            .viewports = {{vk::Viewport{0.0f, swapchain.height(), swapchain.width(), -swapchain.height(), 0.0f, 1.0f}}},
             .scissors = {{swapchain.area()}},
             .cullMode = vk::CullModeFlagBits::eNone,
             .frontFace = vk::FrontFace::eCounterClockwise, // TODO: why CCW?!?
@@ -448,14 +446,18 @@ void Application::run() {
         };
         pipeline_config.apply(cmd_buf, shader.stageFlags());
 
-        cmd_buf.bindVertexBuffers(0, {*scene_data.positions, *scene_data.normals, *scene_data.tangents, *scene_data.texcoords}, {0, 0, 0, 0});
+        cmd_buf.bindVertexBuffers(
+                0, {*scene_data.positions, *scene_data.normals, *scene_data.tangents, *scene_data.texcoords}, {0, 0, 0, 0}
+        );
         cmd_buf.bindIndexBuffer(*scene_data.indices, 0, vk::IndexType::eUint32);
         shader.bindDescriptorSet(cmd_buf, 0, scene_descriptor_sets.current().get());
 
         for (const auto &instance: gltf_data.instances) {
             shader.bindDescriptorSet(cmd_buf, 1, scene_data.descriptors[instance.material.index].get());
 
-            cmd_buf.pushConstants(shader.pipelineLayout(), vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &instance.transformation);
+            cmd_buf.pushConstants(
+                    shader.pipelineLayout(), vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &instance.transformation
+            );
             cmd_buf.drawIndexed(instance.indexCount, 1, instance.indexOffset, instance.vertexOffset, 0);
         }
         cmd_buf.endRendering();
@@ -479,10 +481,10 @@ void Application::run() {
         auto &render_finished_semaphore = render_finished_semaphores.current();
         vk::PipelineStageFlags pipe_stage_flags = vk::PipelineStageFlagBits::eColorAttachmentOutput;
         vk::SubmitInfo submit_info = vk::SubmitInfo()
-                .setCommandBuffers(cmd_buf)
-                .setWaitSemaphores(image_available_semaphore)
-                .setWaitDstStageMask(pipe_stage_flags)
-                .setSignalSemaphores(render_finished_semaphore);
+                                             .setCommandBuffers(cmd_buf)
+                                             .setWaitSemaphores(image_available_semaphore)
+                                             .setWaitDstStageMask(pipe_stage_flags)
+                                             .setSignalSemaphores(render_finished_semaphore);
         ctx.device.mainQueue.submit({submit_info}, in_flight_fence);
 
         swapchain.present(ctx.device.mainQueue, vk::PresentInfoKHR().setWaitSemaphores(render_finished_semaphore));

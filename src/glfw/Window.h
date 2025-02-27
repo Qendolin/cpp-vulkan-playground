@@ -43,12 +43,9 @@ namespace glfw {
         GLFWwindow *handle = nullptr;
 
     public:
-        explicit Window(const WindowCreateInfo &create_info, GLFWmonitor *monitor = nullptr,
-                        GLFWwindow *share = nullptr);
+        explicit Window(const WindowCreateInfo &create_info, GLFWmonitor *monitor = nullptr, GLFWwindow *share = nullptr);
 
-        explicit Window(GLFWwindow *handle)
-            : handle(handle) {
-        }
+        explicit Window(GLFWwindow *handle) : handle(handle) {}
 
         Window() = default;
 
@@ -62,9 +59,7 @@ namespace glfw {
 
         [[nodiscard]] vk::UniqueSurfaceKHR createWindowSurfaceKHRUnique(vk::Instance instance) const;
 
-        explicit operator GLFWwindow *() const {
-            return handle;
-        }
+        explicit operator GLFWwindow *() const { return handle; }
 
         void centerOnScreen() const;
     };
@@ -74,12 +69,9 @@ namespace glfw {
 
     public:
         explicit UniqueWindow(const WindowCreateInfo &create_info, GLFWmonitor *monitor = nullptr, GLFWwindow *share = nullptr)
-            : window(create_info, monitor, share) {
-        }
+            : window(create_info, monitor, share) {}
 
-        explicit UniqueWindow(GLFWwindow *handle)
-            : window(handle) {
-        }
+        explicit UniqueWindow(GLFWwindow *handle) : window(handle) {}
 
         UniqueWindow() = default;
 
@@ -91,25 +83,15 @@ namespace glfw {
 
         UniqueWindow &operator=(UniqueWindow &&other) noexcept;
 
-        const Window *operator->() const noexcept {
-            return &window;
-        }
+        const Window *operator->() const noexcept { return &window; }
 
-        Window *operator->() noexcept {
-            return &window;
-        }
+        Window *operator->() noexcept { return &window; }
 
-        const Window &operator*() const noexcept {
-            return window;
-        }
+        const Window &operator*() const noexcept { return window; }
 
-        Window &operator*() noexcept {
-            return window;
-        }
+        Window &operator*() noexcept { return window; }
 
-        ~UniqueWindow() {
-            reset();
-        }
+        ~UniqueWindow() { reset(); }
 
         void reset() noexcept;
 
@@ -119,4 +101,4 @@ namespace glfw {
 
         explicit operator GLFWwindow *() const { return static_cast<GLFWwindow *>(window); }
     };
-}
+} // namespace glfw

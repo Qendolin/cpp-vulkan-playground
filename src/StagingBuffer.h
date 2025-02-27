@@ -1,9 +1,8 @@
 #pragma once
-#include <tuple>
 #include <array>
-
-#include <vulkan/vulkan.hpp>
+#include <tuple>
 #include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
+#include <vulkan/vulkan.hpp>
 
 #include "CommandPool.h"
 
@@ -55,8 +54,9 @@ class DoubleStagingBuffer : public IStagingBuffer {
     Buffer *current_ = &buffers_[0];
     vk::DeviceSize alignment_ = 0;
 
-    [[nodiscard]] auto createHostVisibleBuffer(size_t size, vma::AllocationInfo *result_info, bool canAlias) const
-        -> std::pair<vma::UniqueBuffer, vma::UniqueAllocation>;
+    [[nodiscard]] std::pair<vma::UniqueBuffer, vma::UniqueAllocation> createHostVisibleBuffer(
+            size_t size, vma::AllocationInfo *result_info, bool canAlias
+    ) const;
 
     void swap(const Commands &commands);
 
@@ -69,7 +69,5 @@ public:
 
     [[nodiscard]] std::tuple<vk::Buffer, void *> allocate(Commands &commands, size_t size) override;
 
-    [[nodiscard]] vma::Allocator allocator() const override {
-        return allocator_;
-    }
+    [[nodiscard]] vma::Allocator allocator() const override { return allocator_; }
 };

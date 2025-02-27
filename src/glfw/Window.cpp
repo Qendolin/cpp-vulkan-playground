@@ -1,8 +1,8 @@
 #include "Window.h"
 
+#include <GLFW/glfw3.h>
 #include <utility>
 #include <vulkan/vulkan.h>
-#include <GLFW/glfw3.h>
 
 namespace glfw {
     Window::Window(const WindowCreateInfo &create_info, GLFWmonitor *monitor, GLFWwindow *share) {
@@ -38,9 +38,7 @@ namespace glfw {
         handle = glfwCreateWindow(create_info.width, create_info.height, create_info.title.c_str(), monitor, share);
     }
 
-    bool Window::shouldClose() const {
-        return glfwWindowShouldClose(handle);
-    }
+    bool Window::shouldClose() const { return glfwWindowShouldClose(handle); }
 
     vk::Extent2D Window::getFramebufferSize() const {
         int width, height;
@@ -67,8 +65,7 @@ namespace glfw {
         glfwSetWindowPos(handle, x + mw / 2 - ww / 2, y + mh / 2 - wh / 2);
     }
 
-    UniqueWindow::UniqueWindow(UniqueWindow &&other) noexcept: window(std::exchange(other.window, Window{})) {
-    }
+    UniqueWindow::UniqueWindow(UniqueWindow &&other) noexcept : window(std::exchange(other.window, Window{})) {}
 
     UniqueWindow &UniqueWindow::operator=(UniqueWindow &&other) noexcept {
         if (this != &other) {
@@ -83,4 +80,4 @@ namespace glfw {
             window = Window{};
         }
     }
-}
+} // namespace glfw

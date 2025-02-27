@@ -5,8 +5,7 @@
 class FrameResourceManager;
 
 template<typename T>
-concept PointerType = std::is_pointer_v<T> || requires(T t)
-{
+concept PointerType = std::is_pointer_v<T> || requires(T t) {
     { *t };
     { t.get() };
 };
@@ -17,9 +16,8 @@ class FrameResource {
     std::vector<T> pool = {};
 
 public:
-    FrameResource(const FrameResourceManager *manager, std::vector<T> &&pool) : manager(manager),
-                                                                                pool(std::move(pool)) {
-    }
+    FrameResource(const FrameResourceManager *manager, std::vector<T> &&pool) :
+        manager(manager), pool(std::move(pool)) {}
 
     ~FrameResource() = default;
 
@@ -41,22 +39,15 @@ class FrameResourceManager {
     int current_ = 0;
 
 public:
-    explicit FrameResourceManager(int size) : size_(size) {
-    }
+    explicit FrameResourceManager(int size) : size_(size) {}
 
     ~FrameResourceManager() = default;
 
-    [[nodiscard]] int frame() const {
-        return current_;
-    }
+    [[nodiscard]] int frame() const { return current_; }
 
-    void advance() {
-        current_ = (current_ + 1) % size_;
-    }
+    void advance() { current_ = (current_ + 1) % size_; }
 
-    [[nodiscard]] int size() const {
-        return size_;
-    }
+    [[nodiscard]] int size() const { return size_; }
 
     template<typename Supplier>
     auto create(Supplier &&supplier) {

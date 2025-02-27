@@ -7,9 +7,7 @@
 
 class CommandPool {
 public:
-    enum class UseMode {
-        Single, Reset, Reuse
-    };
+    enum class UseMode { Single, Reset, Reuse };
 
 private:
     vk::Device device_ = {};
@@ -41,32 +39,28 @@ public:
 
 class Trash {
     vk::Device device_;
-    std::vector<std::function<void()> > trash_;
+    std::vector<std::function<void()>> trash_;
 
 public:
     Trash() = default;
 
-    explicit Trash(vk::Device device) : device_(device) {
-    }
+    explicit Trash(vk::Device device) : device_(device) {}
 
     void clear() {
-        for (const auto &deleter: trash_) deleter();
+        for (const auto &deleter: trash_)
+            deleter();
         trash_.clear();
     }
 
     template<typename T>
-    Trash &operator +=(T &rhs) {
+    Trash &operator+=(T &rhs) {
         T val = rhs;
         rhs = T{};
         using deleter_t = typename vk::UniqueHandleTraits<T, VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>::deleter;
-        if constexpr (std::is_same_v<deleter_t, vk::ObjectDestroy<vk::Device, VULKAN_HPP_DEFAULT_DISPATCHER_TYPE> >) {
-            trash_.emplace_back([this, val] {
-                device_.destroy(val);
-            });
-        } else if constexpr (std::is_same_v<deleter_t, vk::ObjectFree<vk::Device, VULKAN_HPP_DEFAULT_DISPATCHER_TYPE> >) {
-            trash_.emplace_back([this, val] {
-                device_.free(val);
-            });
+        if constexpr (std::is_same_v<deleter_t, vk::ObjectDestroy<vk::Device, VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>>) {
+            trash_.emplace_back([this, val] { device_.destroy(val); });
+        } else if constexpr (std::is_same_v<deleter_t, vk::ObjectFree<vk::Device, VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>>) {
+            trash_.emplace_back([this, val] { device_.free(val); });
         } else {
             static_assert(false, "Unsupported type");
         }
@@ -76,9 +70,7 @@ public:
 
 class Commands {
 public:
-    enum class UseMode {
-        Single, Reset, Reuse
-    };
+    enum class UseMode { Single, Reset, Reuse };
 
 private:
     vk::Device device_ = {};

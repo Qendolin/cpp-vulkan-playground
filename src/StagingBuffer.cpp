@@ -1,8 +1,8 @@
 #include "StagingBuffer.h"
 
 #include <cstring>
-#include <utility>
 #include <format>
+#include <utility>
 
 #include "CommandPool.h"
 #include "Logger.h"
@@ -19,20 +19,22 @@ std::tuple<vk::Buffer, void *> IStagingBuffer::upload(Commands &commands, size_t
 }
 
 std::pair<vma::UniqueBuffer, vma::UniqueAllocation> DoubleStagingBuffer::createHostVisibleBuffer(
-    size_t size, vma::AllocationInfo *result_info, bool canAlias) const {
-    vma::AllocationCreateFlags flags = vma::AllocationCreateFlagBits::eHostAccessSequentialWrite | vma::AllocationCreateFlagBits::eMapped;
+        size_t size, vma::AllocationInfo *result_info, bool canAlias
+) const {
+    vma::AllocationCreateFlags flags = vma::AllocationCreateFlagBits::eHostAccessSequentialWrite |
+                                       vma::AllocationCreateFlagBits::eMapped;
     if (canAlias)
         flags |= vma::AllocationCreateFlagBits::eCanAlias;
     return allocator_.createBufferUnique(
-        {
-            .size = size,
-            .usage = vk::BufferUsageFlagBits::eTransferSrc,
-        },
-        {
-            .flags = flags,
-            .usage = vma::MemoryUsage::eAuto,
-            .requiredFlags = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
-        }, result_info);
+            {
+                .size = size,
+                .usage = vk::BufferUsageFlagBits::eTransferSrc,
+            },
+            {.flags = flags,
+             .usage = vma::MemoryUsage::eAuto,
+             .requiredFlags = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent},
+            result_info
+    );
 }
 
 DoubleStagingBuffer::DoubleStagingBuffer(const vma::Allocator &allocator, const vk::Device &device, size_t capacity)
@@ -40,7 +42,8 @@ DoubleStagingBuffer::DoubleStagingBuffer(const vma::Allocator &allocator, const 
     vma::AllocationInfo allocation_result = {};
     bool first = true;
     for (auto &buffer: buffers_) {
-        buffer.fence = device.createFenceUnique({.flags = first ? vk::FenceCreateFlags{} : vk::FenceCreateFlagBits::eSignaled});
+        buffer.fence =
+                device.createFenceUnique({.flags = first ? vk::FenceCreateFlags{} : vk::FenceCreateFlagBits::eSignaled});
         std::tie(buffer.buffer, buffer.allocation) = createHostVisibleBuffer(capacity, &allocation_result, true);
         buffer.data = allocation_result.pMappedData;
         first = false;
@@ -59,14 +62,14 @@ void DoubleStagingBuffer::swap(const Commands &commands) {
 }
 
 // https://stackoverflow.com/a/9194117/7448536
-size_t DoubleStagingBuffer::alignOffset(size_t offset) const {
-    return (offset + alignment_ - 1) & -alignment_;
-}
+size_t DoubleStagingBuffer::alignOffset(size_t offset) const { return (offset + alignment_ - 1) & -alignment_; }
 
 std::tuple<vk::Buffer, void *> DoubleStagingBuffer::allocate(Commands &commands, size_t size) {
     // handle oversize case
     if (size > capacity_) {
-        Logger::warning(std::format("Allocation larger than staging capacity; performance suboptimal; {} bytes over {}", size - capacity_, capacity_));
+        Logger::warning(std::format(
+                "Allocation larger than staging capacity; performance suboptimal; {} bytes over {}", size - capacity_, capacity_
+        ));
         // Make sure the old allocation is not in use
         if (oversizeBufferAllocation_) {
             commands.submit();
@@ -87,11 +90,12 @@ std::tuple<vk::Buffer, void *> DoubleStagingBuffer::allocate(Commands &commands,
 
     std::tuple result = {
         allocator_.createAliasingBuffer2(
-            *current_->allocation, current_->offset,
-            {
-                .size = size,
-                .usage = vk::BufferUsageFlagBits::eTransferSrc,
-            }),
+                *current_->allocation, current_->offset,
+                {
+                    .size = size,
+                    .usage = vk::BufferUsageFlagBits::eTransferSrc,
+                }
+        ),
         static_cast<unsigned char *>(current_->data) + current_->offset
     };
     current_->offset = alignOffset(current_->offset + size);

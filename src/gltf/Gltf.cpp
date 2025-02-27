@@ -1,27 +1,23 @@
 #include "Gltf.h"
 
-#include <tiny_gltf.h>
 #include <glm/fwd.hpp>
-#include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <glm/gtc/type_ptr.hpp>
+#include <tiny_gltf.h>
 
 #include "../GraphicsBackend.h"
-#include "../Logger.h"
 #include "../Image.h"
+#include "../Logger.h"
 
 namespace gltf {
     template<typename D>
     std::span<D> cast_span(const std::span<uint8_t> &byte_span) {
-        return std::span(
-            reinterpret_cast<D *>(byte_span.data()),
-            byte_span.size() / sizeof(D));
+        return std::span(reinterpret_cast<D *>(byte_span.data()), byte_span.size() / sizeof(D));
     }
 
     template<typename D>
     std::span<D> cast_span(const std::span<const uint8_t> &byte_span) {
-        return std::span(
-            reinterpret_cast<D *>(byte_span.data()),
-            byte_span.size() / sizeof(D));
+        return std::span(reinterpret_cast<D *>(byte_span.data()), byte_span.size() / sizeof(D));
     }
 
     // loads the node's transformation information into a single glm::mat4
@@ -44,7 +40,8 @@ namespace gltf {
             }
             // Check if translation is present
             if (node.translation.size() == 3) {
-                glm::mat4 mat = glm::translate(glm::mat4(1.0), {node.translation[0], node.translation[1], node.translation[2]});
+                glm::mat4 mat =
+                        glm::translate(glm::mat4(1.0), {node.translation[0], node.translation[1], node.translation[2]});
                 transform = mat * transform;
             }
         }
@@ -57,14 +54,15 @@ namespace gltf {
         int32_t vertexOffset;
     };
 
-    void loadMeshes(const tinygltf::Model &model,
-                    std::vector<uint8_t> &vertex_positions,
-                    std::vector<uint8_t> &vertex_normals,
-                    std::vector<uint8_t> &vertex_tangents,
-                    std::vector<uint8_t> &vertex_texcoords,
-                    std::vector<uint8_t> &vertex_indices,
-                    std::vector<PrimitiveInfo> &primitive_infos,
-                    std::vector<uint32_t> &mesh_primitive_indices
+    void loadMeshes(
+            const tinygltf::Model &model,
+            std::vector<uint8_t> &vertex_positions,
+            std::vector<uint8_t> &vertex_normals,
+            std::vector<uint8_t> &vertex_tangents,
+            std::vector<uint8_t> &vertex_texcoords,
+            std::vector<uint8_t> &vertex_indices,
+            std::vector<PrimitiveInfo> &primitive_infos,
+            std::vector<uint32_t> &mesh_primitive_indices
     ) {
         using namespace tinygltf;
 
@@ -78,7 +76,9 @@ namespace gltf {
             mesh_primitive_indices[i] = static_cast<uint32_t>(primitive_infos.size());
 
             for (const auto &prim: mesh.primitives) {
-                Logger::check(prim.mode == TINYGLTF_MODE_TRIANGLES, "Unsupported primitive mode: " + std::to_string(prim.mode));
+                Logger::check(
+                        prim.mode == TINYGLTF_MODE_TRIANGLES, "Unsupported primitive mode: " + std::to_string(prim.mode)
+                );
 
                 int position_access_i = -1;
                 int normal_access_i = -1;
@@ -127,12 +127,18 @@ namespace gltf {
                 const Buffer &texcoord_buffer = model.buffers[texcoord_view.buffer];
                 const Buffer &index_buffer = model.buffers[index_view.buffer];
 
-                const auto position_span = std::span(position_buffer.data.cbegin() + static_cast<ptrdiff_t>(position_view.byteOffset),
-                                                     position_view.byteLength);
-                const auto normal_span = std::span(normal_buffer.data.cbegin() + static_cast<ptrdiff_t>(normal_view.byteOffset), normal_view.byteLength);
-                const auto tangent_span = std::span(tangent_buffer.data.cbegin() + static_cast<ptrdiff_t>(tangent_view.byteOffset), tangent_view.byteLength);
-                const auto texcoord_span = std::span(texcoord_buffer.data.cbegin() + static_cast<ptrdiff_t>(texcoord_view.byteOffset),
-                                                     texcoord_view.byteLength);
+                const auto position_span = std::span(
+                        position_buffer.data.cbegin() + static_cast<ptrdiff_t>(position_view.byteOffset), position_view.byteLength
+                );
+                const auto normal_span = std::span(
+                        normal_buffer.data.cbegin() + static_cast<ptrdiff_t>(normal_view.byteOffset), normal_view.byteLength
+                );
+                const auto tangent_span = std::span(
+                        tangent_buffer.data.cbegin() + static_cast<ptrdiff_t>(tangent_view.byteOffset), tangent_view.byteLength
+                );
+                const auto texcoord_span = std::span(
+                        texcoord_buffer.data.cbegin() + static_cast<ptrdiff_t>(texcoord_view.byteOffset), texcoord_view.byteLength
+                );
                 vertex_positions.insert(vertex_positions.end(), position_span.begin(), position_span.end());
                 vertex_normals.insert(vertex_normals.end(), normal_span.begin(), normal_span.end());
                 vertex_tangents.insert(vertex_tangents.end(), tangent_span.begin(), tangent_span.end());
@@ -141,13 +147,18 @@ namespace gltf {
                 primitive_infos.emplace_back() = {
                     .indexOffset = static_cast<uint32_t>(index_index),
                     .indexCount = static_cast<uint32_t>(index_access.count),
-                    .vertexOffset = static_cast<int32_t>(counted_verts)
+                    .vertexOffset = static_cast<int32_t>(counted_verts),
                 };
 
-                const auto index_span = std::span(index_buffer.data.cbegin() + static_cast<ptrdiff_t>(index_view.byteOffset), index_view.byteLength);
+                const auto index_span = std::span(
+                        index_buffer.data.cbegin() + static_cast<ptrdiff_t>(index_view.byteOffset), index_view.byteLength
+                );
 
                 if (index_access.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
-                    Logger::check(reinterpret_cast<std::uintptr_t>(index_span.data()) % alignof(uint16_t) == 0, "Index data is not aligned to uint16");
+                    Logger::check(
+                            reinterpret_cast<std::uintptr_t>(index_span.data()) % alignof(uint16_t) == 0,
+                            "Index data is not aligned to uint16"
+                    );
                     auto indices_as_shorts = cast_span<const uint16_t>(index_span);
                     for (uint16_t index_short: indices_as_shorts) {
                         vertex_indices_view[index_index++] = static_cast<uint32_t>(index_short);
@@ -209,14 +220,10 @@ namespace gltf {
         std::vector<PrimitiveInfo> primitive_infos;
         std::vector<uint32_t> mesh_primitive_indices(model.meshes.size());
 
-        loadMeshes(model,
-                   scene_data.vertex_position_data,
-                   scene_data.vertex_normal_data,
-                   scene_data.vertex_tangent_data,
-                   scene_data.vertex_texcoord_data,
-                   scene_data.index_data,
-                   primitive_infos,
-                   mesh_primitive_indices);
+        loadMeshes(
+                model, scene_data.vertex_position_data, scene_data.vertex_normal_data, scene_data.vertex_tangent_data,
+                scene_data.vertex_texcoord_data, scene_data.index_data, primitive_infos, mesh_primitive_indices
+        );
 
         scene_data.images.resize(model.textures.size());
         auto load_texture = [&scene_data, &model](int texture_index, int image_index, vk::Format format) {
@@ -226,17 +233,19 @@ namespace gltf {
 
             const auto &image = model.images[image_index];
             Logger::check(image.bits == 8, "Only 8-bit images are supported");
-            scene_data.images[texture_index] = PlainImageData::create(format, image.width, image.height, image.component, image.image.data());
+            scene_data.images[texture_index] =
+                    PlainImageData::create(format, image.width, image.height, image.component, image.image.data());
         };
 
         for (const auto &material: model.materials) {
             Material &mat = scene_data.materials.emplace_back();
             mat.index = static_cast<uint32_t>(scene_data.materials.size()) - 1;
             mat.albedoFactor = glm::vec4(
-                material.pbrMetallicRoughness.baseColorFactor.at(0),
-                material.pbrMetallicRoughness.baseColorFactor.at(1),
-                material.pbrMetallicRoughness.baseColorFactor.at(2),
-                material.pbrMetallicRoughness.baseColorFactor.at(3));
+                    material.pbrMetallicRoughness.baseColorFactor.at(0),
+                    material.pbrMetallicRoughness.baseColorFactor.at(1),
+                    material.pbrMetallicRoughness.baseColorFactor.at(2),
+                    material.pbrMetallicRoughness.baseColorFactor.at(3)
+            );
             mat.metaillicFactor = static_cast<float>(material.pbrMetallicRoughness.metallicFactor);
             mat.roughnessFactor = static_cast<float>(material.pbrMetallicRoughness.roughnessFactor);
             mat.normalFactor = static_cast<float>(material.normalTexture.scale);
@@ -260,17 +269,21 @@ namespace gltf {
                 const auto &mr_image = model.images[mr_texture.source];
                 // TODO: This is untested, and I think its wrong
                 if (omr_image_data) {
-                    Logger::check(mr_image.width == omr_image_data->width && mr_image.height == omr_image_data->height,
-                                  "Occlusion texture size doesn't match metalness-roughness texture size");
-                    PlainImageData mr_data = PlainImageData::create(vk::Format::eR8G8Unorm, mr_image.width, mr_image.height, mr_image.component,
-                                                                    mr_image.image.data());
+                    Logger::check(
+                            mr_image.width == omr_image_data->width && mr_image.height == omr_image_data->height,
+                            "Occlusion texture size doesn't match metalness-roughness texture size"
+                    );
+                    PlainImageData mr_data = PlainImageData::create(
+                            vk::Format::eR8G8Unorm, mr_image.width, mr_image.height, mr_image.component,
+                            mr_image.image.data()
+                    );
                     mr_data.copyChannels(*omr_image_data, {-1, 1, 2});
                 } else {
                     load_texture(mr_index, mr_texture.source, vk::Format::eR8G8B8A8Unorm);
                     mat.omr = mr_index;
                 }
             }
-            if (o_index != -1 && mr_index == -1) {
+            if (o_index != -1 && mr_index == -1 && omr_image_data) {
                 omr_image_data->fill({1, 2}, {0xff, 0xff});
             }
             int normal_index = material.normalTexture.index;
@@ -303,4 +316,4 @@ namespace gltf {
 
         return scene_data;
     }
-}
+} // namespace gltf

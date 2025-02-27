@@ -1,10 +1,9 @@
 #pragma once
 
-#include <vector>
 #include <cstdint>
-
-#include <vulkan/vulkan.hpp>
+#include <vector>
 #include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
+#include <vulkan/vulkan.hpp>
 
 class WindowContext;
 
@@ -33,13 +32,9 @@ class Swapchain {
     bool invalid = true;
 
 public:
-    explicit Swapchain(const WindowContext &ctx) : ctx(ctx) {
-        create();
-    }
+    explicit Swapchain(const WindowContext &ctx) : ctx(ctx) { create(); }
 
-    [[nodiscard]] vk::Format colorFormatSrgb() const {
-        return surfaceFormat.format;
-    }
+    [[nodiscard]] vk::Format colorFormatSrgb() const { return surfaceFormat.format; }
 
     [[nodiscard]] vk::Format colorFormatLinear() const {
         if (surfaceFormatLinear == vk::Format::eUndefined)
@@ -47,49 +42,27 @@ public:
         return surfaceFormatLinear;
     }
 
-    [[nodiscard]] vk::Format depthFormat() const {
-        return depthImageFormat;
-    }
+    [[nodiscard]] vk::Format depthFormat() const { return depthImageFormat; }
 
-    [[nodiscard]] int imageCount() const {
-        return imageCount_;
-    }
+    [[nodiscard]] int imageCount() const { return imageCount_; }
 
-    [[nodiscard]] int minImageCount() const {
-        return minImageCount_;
-    }
+    [[nodiscard]] int minImageCount() const { return minImageCount_; }
 
-    [[nodiscard]] int maxImageCount() const {
-        return maxImageCount_;
-    }
+    [[nodiscard]] int maxImageCount() const { return maxImageCount_; }
 
-    [[nodiscard]] vk::PresentModeKHR presentMode() const {
-        return presentMode_;
-    }
+    [[nodiscard]] vk::PresentModeKHR presentMode() const { return presentMode_; }
 
-    [[nodiscard]] vk::Extent2D extents() const {
-        return surfaceExtents;
-    }
+    [[nodiscard]] vk::Extent2D extents() const { return surfaceExtents; }
 
-    [[nodiscard]] vk::Rect2D area() const {
-        return {{}, surfaceExtents};
-    }
+    [[nodiscard]] vk::Rect2D area() const { return {{}, surfaceExtents}; }
 
-    [[nodiscard]] float width() const {
-        return static_cast<float>(surfaceExtents.width);
-    }
+    [[nodiscard]] float width() const { return static_cast<float>(surfaceExtents.width); }
 
-    [[nodiscard]] float height() const {
-        return static_cast<float>(surfaceExtents.height);
-    }
+    [[nodiscard]] float height() const { return static_cast<float>(surfaceExtents.height); }
 
-    [[nodiscard]] vk::Image colorImage() const {
-        return swapchainImages.at(activeImageIndex);
-    }
+    [[nodiscard]] vk::Image colorImage() const { return swapchainImages.at(activeImageIndex); }
 
-    [[nodiscard]] vk::ImageView colorViewSrgb() const {
-        return *swapchainImageViewsSrgb.at(activeImageIndex);
-    }
+    [[nodiscard]] vk::ImageView colorViewSrgb() const { return *swapchainImageViewsSrgb.at(activeImageIndex); }
 
     [[nodiscard]] vk::ImageView colorViewLinear() const {
         if (surfaceFormatLinear == vk::Format::eUndefined)
@@ -97,21 +70,15 @@ public:
         return *swapchainImageViewsUnorm.at(activeImageIndex);
     }
 
-    [[nodiscard]] vk::Image depthImage() const {
-        return *depthImage_;
-    }
+    [[nodiscard]] vk::Image depthImage() const { return *depthImage_; }
 
-    [[nodiscard]] vk::ImageView depthView() const {
-        return *depthImageView;
-    }
+    [[nodiscard]] vk::ImageView depthView() const { return *depthImageView; }
 
     void create();
 
     void recreate();
 
-    void invalidate() {
-        invalid = true;
-    }
+    void invalidate() { invalid = true; }
 
     [[nodiscard]] bool advance(const vk::Semaphore &image_available_semaphore);
 

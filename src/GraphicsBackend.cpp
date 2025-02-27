@@ -3,13 +3,12 @@
 #include "GraphicsBackend.h"
 
 #include <algorithm>
-#include <format>
 #include <cstring>
-#include <set>
-#include <ranges>
-#include <vulkan/vulkan.h>
+#include <format>
 #include <glfw/glfw3.h>
-
+#include <ranges>
+#include <set>
+#include <vulkan/vulkan.h>
 #include <vulkan/vulkan.hpp>
 
 #include "Logger.h"
@@ -17,8 +16,12 @@
 
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 
-static VkBool32 vulkanErrorCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT /*messageType*/,
-                                    const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void * /*pUserData*/) {
+static VkBool32 vulkanErrorCallback(
+        VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+        VkDebugUtilsMessageTypeFlagsEXT /*messageType*/,
+        const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
+        void * /*pUserData*/
+) {
     if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
         Logger::error(std::string(pCallbackData->pMessage));
     } else if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
@@ -58,11 +61,15 @@ InstanceContext::InstanceContext() {
 
     Logger::info("Available Layers:");
     for (auto layer_property: vk::enumerateInstanceLayerProperties()) {
-        Logger::info(std::format("- {}: {}", std::string(layer_property.layerName.data()), std::string(layer_property.description.data())));
+        Logger::info(std::format(
+                "- {}: {}", std::string(layer_property.layerName.data()), std::string(layer_property.description.data())
+        ));
     }
 
     auto extension_properties = vk::enumerateInstanceExtensionProperties();
-    auto extension_names = std::views::transform(extension_properties, [](const auto &e) { return std::string(e.extensionName.data()); });
+    auto extension_names = std::views::transform(extension_properties, [](const auto &e) {
+        return std::string(e.extensionName.data());
+    });
     supportedExtensions = std::set(extension_names.begin(), extension_names.end());
 
     instance = vk::createInstanceUnique(instance_create_info);
@@ -74,8 +81,7 @@ InstanceContext::InstanceContext() {
                            vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
                            vk::DebugUtilsMessageSeverityFlagBitsEXT::eError |
                            vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo,
-        .messageType = vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
-                       vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance |
+        .messageType = vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance |
                        vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation |
                        vk::DebugUtilsMessageTypeFlagBitsEXT::eDeviceAddressBinding,
         .pfnUserCallback = &vulkanErrorCallback,
@@ -92,10 +98,11 @@ class DeviceSelector {
 
     static bool hasExtensions(vk::PhysicalDevice device, std::span<std::string> names) {
         auto extension_properties = device.enumerateDeviceExtensionProperties();
-        auto extension_names = std::views::transform(extension_properties, [](const auto &e) { return std::string(e.extensionName.data()); });
+        auto extension_names = std::views::transform(extension_properties, [](const auto &e) {
+            return std::string(e.extensionName.data());
+        });
         auto extension_set = std::set(extension_names.begin(), extension_names.end());
-        return std::ranges::all_of(names,
-                                   [&](const auto &name) { return extension_set.contains(name); });
+        return std::ranges::all_of(names, [&](const auto &name) { return extension_set.contains(name); });
     }
 
     static bool hasQueues(vk::PhysicalDevice device, vk::QueueFlags queues) {
@@ -106,18 +113,18 @@ class DeviceSelector {
     }
 
     static bool hasPresentationSupport(vk::Instance instance, vk::PhysicalDevice device) {
-        return std::ranges::any_of(std::views::enumerate(device.getQueueFamilyProperties()),
-                                   [&](const auto &entry) {
-                                       const auto &[index, queue] = entry;
-                                       return (queue.queueFlags & vk::QueueFlagBits::eGraphics)
-                                              && glfwGetPhysicalDevicePresentationSupport(instance, device, static_cast<uint32_t>(index)) == GLFW_TRUE;
-                                   });
+        return std::ranges::any_of(std::views::enumerate(device.getQueueFamilyProperties()), [&](const auto &entry) {
+            const auto &[index, queue] = entry;
+            bool supportsPresentation =
+                    glfwGetPhysicalDevicePresentationSupport(instance, device, static_cast<uint32_t>(index));
+            return (queue.queueFlags & vk::QueueFlagBits::eGraphics) && supportsPresentation;
+        });
     }
 
     bool isAcceptable(vk::PhysicalDevice device) {
-        return hasExtensions(device, requriedExtensions)
-               && hasQueues(device, vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute)
-               && hasPresentationSupport(instance, device);
+        return hasExtensions(device, requriedExtensions) &&
+               hasQueues(device, vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute) &&
+               hasPresentationSupport(instance, device);
     }
 
     float static score(vk::PhysicalDevice device) {
@@ -138,18 +145,18 @@ class DeviceSelector {
     }
 
 public:
-    explicit DeviceSelector(vk::Instance instance, std::vector<vk::PhysicalDevice> &&devices) : instance(instance), physicalDevices(std::move(devices)) {
-    }
+    explicit DeviceSelector(vk::Instance instance, std::vector<vk::PhysicalDevice> &&devices) :
+        instance(instance), physicalDevices(std::move(devices)) {}
 
     void setRequiredExtensions(std::span<const char *> names) {
         requriedExtensions.clear();
-        std::ranges::transform(names.cbegin(), names.cend(), std::back_inserter(requriedExtensions),
-                               [](auto name) { return std::string(name); });
+        std::ranges::transform(names.cbegin(), names.cend(), std::back_inserter(requriedExtensions), [](auto name) {
+            return std::string(name);
+        });
     }
 
     std::optional<vk::PhysicalDevice> select() {
-        auto acceptable = std::views::filter(physicalDevices,
-                                             [this](auto device) { return isAcceptable(device); });
+        auto acceptable = std::views::filter(physicalDevices, [this](auto device) { return isAcceptable(device); });
         if (acceptable.empty()) {
             return std::nullopt;
         }
@@ -161,8 +168,12 @@ public:
 DeviceContext::DeviceContext() {
     const auto &ctx = instace;
     std::array required_extensions = {
-        vk::KHRSwapchainExtensionName, vk::EXTMemoryBudgetExtensionName, vk::KHRDynamicRenderingExtensionName, vk::EXTShaderObjectExtensionName,
-        vk::KHRUniformBufferStandardLayoutExtensionName, vk::EXTScalarBlockLayoutExtensionName
+        vk::KHRSwapchainExtensionName,
+        vk::EXTMemoryBudgetExtensionName,
+        vk::KHRDynamicRenderingExtensionName,
+        vk::EXTShaderObjectExtensionName,
+        vk::KHRUniformBufferStandardLayoutExtensionName,
+        vk::EXTScalarBlockLayoutExtensionName
     };
     std::array optional_extensions = {vk::KHRSwapchainMutableFormatExtensionName};
 
@@ -175,42 +186,51 @@ DeviceContext::DeviceContext() {
     physicalDevice = physical_device_opt.value();
     Logger::info(std::format("Usig GPU: {}", std::string_view(physicalDevice.getProperties().deviceName)));
 
-    const auto find_queue = [](std::span<vk::QueueFamilyProperties> queues, vk::QueueFlags required, vk::QueueFlags excluded) -> std::optional<uint32_t> {
+    const auto find_queue = [](std::span<vk::QueueFamilyProperties> queues, vk::QueueFlags required,
+                               vk::QueueFlags excluded) -> std::optional<uint32_t> {
         const auto view = std::views::enumerate(queues);
-        const auto it = std::ranges::find_if(view,
-                                             [required, excluded](const auto &entry) {
-                                                 const auto &[index, queue] = entry;
-                                                 if (queue.queueFlags & excluded) return false;
-                                                 if (queue.queueFlags & required) return true;
-                                                 return false;
-                                             });
+        const auto it = std::ranges::find_if(view, [required, excluded](const auto &entry) {
+            const auto &[index, queue] = entry;
+            if (queue.queueFlags & excluded)
+                return false;
+            if (queue.queueFlags & required)
+                return true;
+            return false;
+        });
         return it == view.end() ? std::nullopt : std::optional(static_cast<int32_t>(std::get<0>(*it)));
     };
     auto queue_families = physicalDevice.getQueueFamilyProperties();
+    // clang-format off
     // A graphics + compute queue always supports transfer
-    mainQueueFamily = find_queue(queue_families, vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute, {})
+    mainQueueFamily =
+            find_queue(queue_families, vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute, {})
             .value_or(-1u);
     // Look for a queue that has only compute, no graphics
-    computeQueueFamily = find_queue(queue_families, vk::QueueFlagBits::eCompute,
-                                    vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eVideoDecodeKHR | vk::QueueFlagBits::eVideoEncodeKHR)
+    computeQueueFamily =
+            find_queue(queue_families, vk::QueueFlagBits::eCompute,
+                            vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eVideoDecodeKHR | vk::QueueFlagBits::eVideoEncodeKHR)
             .value_or(mainQueueFamily);
     // Look for a queue that has only transfer, no compute or graphics
-    transferQueueFamily = find_queue(queue_families, vk::QueueFlagBits::eTransfer,
+    transferQueueFamily =
+            find_queue(queue_families, vk::QueueFlagBits::eTransfer,
                                      vk::QueueFlagBits::eCompute | vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eVideoDecodeKHR |
                                      vk::QueueFlagBits::eVideoEncodeKHR)
             .value_or(mainQueueFamily);
+    // clang-format on
 
-    std::vector<std::vector<float> > queue_priorities(queue_families.size());
+    std::vector<std::vector<float>> queue_priorities(queue_families.size());
     queue_priorities[mainQueueFamily].push_back(1.0);
     queue_priorities[computeQueueFamily].push_back(1.0);
     queue_priorities[transferQueueFamily].push_back(1.0);
 
     std::vector<vk::DeviceQueueCreateInfo> queue_create_infos =
-            std::views::iota(0u, static_cast<uint32_t>(queue_families.size()))
-            | std::views::transform([&queue_priorities](auto index) {
-                return vk::DeviceQueueCreateInfo{.queueFamilyIndex = index, .pQueuePriorities = queue_priorities[index].data()};
-            })
-            | std::ranges::to<std::vector>();
+            std::views::iota(0u, static_cast<uint32_t>(queue_families.size())) |
+            std::views::transform([&queue_priorities](auto index) {
+                return vk::DeviceQueueCreateInfo{
+                    .queueFamilyIndex = index, .pQueuePriorities = queue_priorities[index].data()
+                };
+            }) |
+            std::ranges::to<std::vector>();
 
     uint32_t main_queue_result_index = queue_create_infos[mainQueueFamily].queueCount++;
     uint32_t compute_queue_result_index = queue_create_infos[computeQueueFamily].queueCount++;
@@ -226,10 +246,13 @@ DeviceContext::DeviceContext() {
     }
     main_queue_result_index = std::min(main_queue_result_index, queue_create_infos[mainQueueFamily].queueCount - 1);
     compute_queue_result_index = std::min(compute_queue_result_index, queue_create_infos[computeQueueFamily].queueCount - 1);
-    transfer_queue_result_index = std::min(transfer_queue_result_index, queue_create_infos[transferQueueFamily].queueCount - 1);
+    transfer_queue_result_index =
+            std::min(transfer_queue_result_index, queue_create_infos[transferQueueFamily].queueCount - 1);
 
     auto extension_properties = physicalDevice.enumerateDeviceExtensionProperties();
-    auto extension_names = std::views::transform(extension_properties, [](const auto &e) { return std::string(e.extensionName.data()); });
+    auto extension_names = std::views::transform(extension_properties, [](const auto &e) {
+        return std::string(e.extensionName.data());
+    });
     supportedExtensions = std::set(extension_names.begin(), extension_names.end());
 
     auto enabled_extensions = std::vector<const char *>();
@@ -248,8 +271,8 @@ DeviceContext::DeviceContext() {
         vk::DeviceCreateInfo{
             .pEnabledFeatures = &enabled_features,
         }
-        .setQueueCreateInfos(queue_create_infos)
-        .setPEnabledExtensionNames(enabled_extensions),
+                .setQueueCreateInfos(queue_create_infos)
+                .setPEnabledExtensionNames(enabled_extensions),
         vk::PhysicalDeviceSynchronization2Features{.synchronization2 = true},
         vk::PhysicalDeviceDynamicRenderingFeaturesKHR{.dynamicRendering = true},
         vk::PhysicalDeviceShaderObjectFeaturesEXT{.shaderObject = true},
@@ -275,7 +298,7 @@ DeviceContext::DeviceContext() {
     });
 }
 
-WindowContext::WindowContext(const Config &config): instance(device.instace) {
+WindowContext::WindowContext(const Config &config) : instance(device.instace) {
     const auto &ctx = device;
     window = glfw::UniqueWindow({
         .width = config.width,
@@ -294,6 +317,7 @@ WindowContext::WindowContext(const Config &config): instance(device.instace) {
     input = std::make_unique<glfw::Input>(*window);
 }
 
-AppContext::AppContext(const WindowContext::Config &window_config): window(window_config), device(window.device), instance(window.device.instace) {
+AppContext::AppContext(const WindowContext::Config &window_config) :
+    window(window_config), device(window.device), instance(window.device.instace) {
     swapchain = std::make_unique<Swapchain>(window);
 }

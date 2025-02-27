@@ -1,7 +1,7 @@
 #pragma once
+
 #include <array>
 #include <limits>
-
 
 struct FrameTimes {
     int singleIndex = 0;

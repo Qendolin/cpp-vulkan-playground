@@ -1,11 +1,8 @@
 #pragma once
 
 #include <imgui.h>
-#include <imgui_impl_vulkan.h>
 #include <imgui_impl_glfw.h>
-
-#include "ImGui.h"
-
+#include <imgui_impl_vulkan.h>
 
 class AppContext;
 class Swapchain;
@@ -15,4 +12,4 @@ namespace glfw {
     class Window;
 }
 
-void initImGui(const AppContext& ctx);
+void initImGui(const AppContext &ctx);

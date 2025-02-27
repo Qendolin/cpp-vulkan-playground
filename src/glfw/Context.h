@@ -1,4 +1,5 @@
 #pragma once
+
 #include <vector>
 
 namespace glfw {
@@ -24,4 +25,4 @@ namespace glfw {
 
         [[nodiscard]] static std::vector<const char *> getRequiredInstanceExtensions();
     };
-}
+} // namespace glfw

@@ -2,7 +2,6 @@
 
 #include <filesystem>
 #include <fstream>
-
 #include <shaderc/shaderc.hpp>
 #include <utility>
 #include <vulkan/vulkan.hpp>
@@ -33,9 +32,8 @@ class ShaderIncluder final : public shaderc::CompileOptions::IncluderInterface {
         const std::string source_name_str;
         const std::string content_str;
 
-        IncludeResult(std::string source_name, std::string content) : shaderc_include_result(),
-                                                                      source_name_str(std::move(source_name)),
-                                                                      content_str(std::move(content)) {
+        IncludeResult(std::string source_name, std::string content)
+            : shaderc_include_result(), source_name_str(std::move(source_name)), content_str(std::move(content)) {
             this->source_name = source_name_str.data();
             this->source_name_length = source_name_str.size();
             this->content = content_str.data();
@@ -44,15 +42,17 @@ class ShaderIncluder final : public shaderc::CompileOptions::IncluderInterface {
         }
     };
 
-    shaderc_include_result *GetInclude(const char *requested_source, shaderc_include_type type, const char *requesting_source,
-                                       size_t /*include_depth*/) override {
+    shaderc_include_result *GetInclude(
+            const char *requested_source, shaderc_include_type type, const char *requesting_source, size_t
+    ) override {
         std::filesystem::path file_path;
         if (type == shaderc_include_type_relative) {
             file_path = std::filesystem::path(requesting_source).parent_path() / requested_source;
             if (!std::filesystem::exists(file_path))
                 Logger::panic(
-                    "Shader file " + std::string(requested_source) + " loaded from " + std::string(requesting_source) +
-                    " does not exist");
+                        "Shader file " + std::string(requested_source) + " loaded from " +
+                        std::string(requesting_source) + " does not exist"
+                );
         } else {
             file_path = std::filesystem::path(requested_source);
         }
@@ -62,18 +62,16 @@ class ShaderIncluder final : public shaderc::CompileOptions::IncluderInterface {
         return new IncludeResult(file_path_string, content);
     }
 
-    void ReleaseInclude(shaderc_include_result *data) override {
-        delete static_cast<IncludeResult *>(data);
-    }
+    void ReleaseInclude(shaderc_include_result *data) override { delete static_cast<IncludeResult *>(data); }
 };
 
-ShaderCompiler::ShaderCompiler() {
-    compiler = std::make_unique<shaderc::Compiler>();
-}
+ShaderCompiler::ShaderCompiler() { compiler = std::make_unique<shaderc::Compiler>(); }
 
 ShaderCompiler::~ShaderCompiler() = default;
 
-std::vector<uint32_t> ShaderCompiler::compile(const std::filesystem::path &source_path, vk::ShaderStageFlagBits stage, ShaderCompileOptions opt) const {
+std::vector<uint32_t> ShaderCompiler::compile(
+        const std::filesystem::path &source_path, vk::ShaderStageFlagBits stage, ShaderCompileOptions opt
+) const {
     shaderc::CompileOptions options = {};
 
     if (opt.debug)
@@ -107,8 +105,8 @@ std::vector<uint32_t> ShaderCompiler::compile(const std::filesystem::path &sourc
             Logger::panic("Unknown shader type: " + source_path.string());
     }
 
-    shaderc::PreprocessedSourceCompilationResult preprocessed_result = compiler->PreprocessGlsl(
-        source, kind, source_path.string().c_str(), options);
+    shaderc::PreprocessedSourceCompilationResult preprocessed_result =
+            compiler->PreprocessGlsl(source, kind, source_path.string().c_str(), options);
 
     if (preprocessed_result.GetCompilationStatus() != shaderc_compilation_status_success) {
         Logger::panic(preprocessed_result.GetErrorMessage());
@@ -122,7 +120,8 @@ std::vector<uint32_t> ShaderCompiler::compile(const std::filesystem::path &sourc
     if (opt.optimize)
         options.SetOptimizationLevel(shaderc_optimization_level_performance);
 
-    shaderc::SpvCompilationResult module = compiler->CompileGlslToSpv(preprocessed_code, kind, source_path.string().c_str(), options);
+    shaderc::SpvCompilationResult module =
+            compiler->CompileGlslToSpv(preprocessed_code, kind, source_path.string().c_str(), options);
 
     if (module.GetCompilationStatus() != shaderc_compilation_status_success) {
         Logger::panic("Shader compilation failed:\n" + module.GetErrorMessage());

@@ -1,13 +1,13 @@
 #pragma once
 
 #include <set>
-#include <vulkan/vulkan.hpp>
 #include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
+#include <vulkan/vulkan.hpp>
 
 #include "Swapchain.h"
 #include "glfw/Context.h"
-#include "glfw/Window.h"
 #include "glfw/Input.h"
+#include "glfw/Window.h"
 
 
 class Swapchain;
@@ -22,9 +22,7 @@ public:
 
     InstanceContext();
 
-    [[nodiscard]] vk::Instance get() const {
-        return *instance;
-    }
+    [[nodiscard]] vk::Instance get() const { return *instance; }
 
     InstanceContext(InstanceContext &&other) = delete;
 
@@ -59,9 +57,7 @@ public:
 
     DeviceContext();
 
-    [[nodiscard]] vk::Device get() const {
-        return *device;
-    }
+    [[nodiscard]] vk::Device get() const { return *device; }
 
     DeviceContext(DeviceContext &&other) = delete;
 
@@ -90,9 +86,7 @@ public:
 
     explicit WindowContext(const Config &config);
 
-    [[nodiscard]] glfw::Window get() const {
-        return *window;
-    }
+    [[nodiscard]] glfw::Window get() const { return *window; }
 
     WindowContext(WindowContext &&other) = delete;
 

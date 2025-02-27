@@ -38,5 +38,6 @@ target_link_libraries(cpp_vulkan_playground PRIVATE tinyobjloader::tinyobjloader
 target_link_libraries(cpp_vulkan_playground PRIVATE nlohmann_json::nlohmann_json)
 target_link_libraries(cpp_vulkan_playground PRIVATE Vulkan::UtilityHeaders) # Unused-> Vulkan::SafeStruct Vulkan::LayerSettings  Vulkan::CompilerConfiguration
 target_link_libraries(cpp_vulkan_playground PRIVATE cpptrace::cpptrace)
+target_compile_definitions(cpp_vulkan_playground PRIVATE IMGUI_DEFINE_MATH_OPERATORS)
 target_link_libraries(cpp_vulkan_playground PRIVATE imgui::imgui)
 target_link_libraries(cpp_vulkan_playground PRIVATE TracyClient)

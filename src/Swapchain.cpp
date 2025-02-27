@@ -1,10 +1,10 @@
 #include "Swapchain.h"
 
-#include <algorithm>
 #include <GLFW/glfw3.h>
+#include <algorithm>
 
-#include "Logger.h"
 #include "GraphicsBackend.h"
+#include "Logger.h"
 
 void Swapchain::create() {
     const auto device = ctx.device.get();
@@ -15,18 +15,22 @@ void Swapchain::create() {
     auto surface_present_modes = physicalDevice.getSurfacePresentModesKHR(surface);
 
     auto surface_format_iter = std::find_if(surface_formats.begin(), surface_formats.end(), [](auto &&format) {
-        return (format.format == vk::Format::eB8G8R8A8Srgb || format.format == vk::Format::eR8G8B8A8Srgb) && format.colorSpace ==
-               vk::ColorSpaceKHR::eSrgbNonlinear;
+        return (format.format == vk::Format::eB8G8R8A8Srgb || format.format == vk::Format::eR8G8B8A8Srgb) &&
+               format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear;
     });
     if (surface_format_iter == surface_formats.end())
         Logger::panic("No suitable surface fromat found");
     surfaceFormat = surface_format_iter[0];
 
     auto present_mode_preference = [](const vk::PresentModeKHR mode) {
-        if (mode == vk::PresentModeKHR::eMailbox) return 3;
-        if (mode == vk::PresentModeKHR::eFifoRelaxed) return 2;
-        if (mode == vk::PresentModeKHR::eFifo) return 1;
-        if (mode == vk::PresentModeKHR::eImmediate) return 0;
+        if (mode == vk::PresentModeKHR::eMailbox)
+            return 3;
+        if (mode == vk::PresentModeKHR::eFifoRelaxed)
+            return 2;
+        if (mode == vk::PresentModeKHR::eFifo)
+            return 1;
+        if (mode == vk::PresentModeKHR::eImmediate)
+            return 0;
         return -1;
     };
     std::ranges::sort(surface_present_modes, [&present_mode_preference](const auto a, const auto b) {
@@ -40,12 +44,13 @@ void Swapchain::create() {
 
     // Query surface capabilites when using this specifc present mode
     vk::StructureChain surface_capabilities_query = {
-        vk::PhysicalDeviceSurfaceInfo2KHR{.surface = surface},
-        vk::SurfacePresentModeEXT{.presentMode = presentMode_}
+        vk::PhysicalDeviceSurfaceInfo2KHR{.surface = surface}, vk::SurfacePresentModeEXT{.presentMode = presentMode_}
     };
     // different present modes can have specifc image count requirements
-    auto surface_capabilities = physicalDevice.getSurfaceCapabilities2KHR(
-        surface_capabilities_query.get<vk::PhysicalDeviceSurfaceInfo2KHR>()).surfaceCapabilities;
+    auto surface_capabilities =
+            physicalDevice
+                    .getSurfaceCapabilities2KHR(surface_capabilities_query.get<vk::PhysicalDeviceSurfaceInfo2KHR>())
+                    .surfaceCapabilities;
 
     uint32_t swapchain_image_count = 0;
     if (surface_capabilities.maxImageCount > 0)
@@ -56,22 +61,27 @@ void Swapchain::create() {
     maxImageCount_ = static_cast<int>(std::max(surface_capabilities.maxImageCount, swapchain_image_count));
 
     surfaceExtents = ctx.window.get().getFramebufferSize();
-    surfaceExtents.width = std::clamp(surfaceExtents.width, surface_capabilities.minImageExtent.width,
-                                      surface_capabilities.maxImageExtent.width);
-    surfaceExtents.height = std::clamp(surfaceExtents.height, surface_capabilities.minImageExtent.height,
-                                       surface_capabilities.maxImageExtent.height);
+    surfaceExtents.width = std::clamp(
+            surfaceExtents.width, surface_capabilities.minImageExtent.width, surface_capabilities.maxImageExtent.width
+    );
+    surfaceExtents.height = std::clamp(
+            surfaceExtents.height, surface_capabilities.minImageExtent.height, surface_capabilities.maxImageExtent.height
+    );
 
     // need to be destroyed before swapchain is
     swapchainImageViewsSrgb.clear();
     swapchainImageViewsUnorm.clear();
 
     // allow ceation of a unorm image view
-    bool mutable_swapchain_format_supported = ctx.device.supportedExtensions.contains(vk::KHRSwapchainMutableFormatExtensionName);
+    bool mutable_swapchain_format_supported =
+            ctx.device.supportedExtensions.contains(vk::KHRSwapchainMutableFormatExtensionName);
     surfaceFormatLinear = vk::Format::eUndefined;
     vk::SwapchainCreateFlagsKHR create_falgs = {};
     if (mutable_swapchain_format_supported) {
-        if (surfaceFormat.format == vk::Format::eR8G8B8A8Srgb) surfaceFormatLinear = vk::Format::eR8G8B8A8Unorm;
-        else if (surfaceFormat.format == vk::Format::eB8G8R8A8Srgb) surfaceFormatLinear = vk::Format::eB8G8R8A8Unorm;
+        if (surfaceFormat.format == vk::Format::eR8G8B8A8Srgb)
+            surfaceFormatLinear = vk::Format::eR8G8B8A8Unorm;
+        else if (surfaceFormat.format == vk::Format::eB8G8R8A8Srgb)
+            surfaceFormatLinear = vk::Format::eB8G8R8A8Unorm;
         create_falgs |= vk::SwapchainCreateFlagBitsKHR::eMutableFormat;
     }
 
@@ -110,13 +120,14 @@ void Swapchain::create() {
             .viewType = vk::ImageViewType::e2D,
             .format = surfaceFormat.format,
             .components = vk::ComponentMapping{},
-            .subresourceRange = {
-                .aspectMask = vk::ImageAspectFlagBits::eColor,
-                .baseMipLevel = 0,
-                .levelCount = 1,
-                .baseArrayLayer = 0,
-                .layerCount = 1
-            }
+            .subresourceRange =
+                    {
+                        .aspectMask = vk::ImageAspectFlagBits::eColor,
+                        .baseMipLevel = 0,
+                        .levelCount = 1,
+                        .baseArrayLayer = 0,
+                        .layerCount = 1,
+                    },
         };
         swapchainImageViewsSrgb.emplace_back(device.createImageViewUnique(image_view_create_info));
         if (surfaceFormatLinear != vk::Format::eUndefined) {
@@ -127,32 +138,25 @@ void Swapchain::create() {
 
     depthImageView.reset();
     std::tie(depthImage_, depthImageAllocation) = ctx.device.allocator->createImageUnique(
-        {
-            .imageType = vk::ImageType::e2D,
-            .format = depthImageFormat,
-            .extent = {
-                .width = surfaceExtents.width,
-                .height = surfaceExtents.height,
-                .depth = 1
+            {
+                .imageType = vk::ImageType::e2D,
+                .format = depthImageFormat,
+                .extent = {.width = surfaceExtents.width, .height = surfaceExtents.height, .depth = 1},
+                .mipLevels = 1,
+                .arrayLayers = 1,
+                .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment,
             },
-            .mipLevels = 1,
-            .arrayLayers = 1,
-            .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment,
-        },
-        {
-            .usage = vma::MemoryUsage::eAutoPreferDevice,
-            .requiredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal,
-        });
+            {
+                .usage = vma::MemoryUsage::eAutoPreferDevice,
+                .requiredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal,
+            }
+    );
 
     depthImageView = device.createImageViewUnique({
         .image = *depthImage_,
         .viewType = vk::ImageViewType::e2D,
         .format = depthImageFormat,
-        .subresourceRange = {
-            .aspectMask = vk::ImageAspectFlagBits::eDepth,
-            .levelCount = 1,
-            .layerCount = 1
-        }
+        .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
     });
 
     invalid = false;
@@ -179,7 +183,8 @@ bool Swapchain::advance(const vk::Semaphore &image_available_semaphore) {
     }
 
     try {
-        auto image_acquistion_result = ctx.device.get().acquireNextImageKHR(*swapchain, UINT64_MAX, image_available_semaphore, nullptr);
+        auto image_acquistion_result =
+                ctx.device.get().acquireNextImageKHR(*swapchain, UINT64_MAX, image_available_semaphore, nullptr);
         if (image_acquistion_result.result == vk::Result::eSuboptimalKHR) {
             Logger::warning("Swapchain may need recreation: VK_SUBOPTIMAL_KHR");
             invalidate();
@@ -198,9 +203,7 @@ bool Swapchain::advance(const vk::Semaphore &image_available_semaphore) {
 }
 
 void Swapchain::present(const vk::Queue &queue, vk::PresentInfoKHR &present_info) {
-    present_info
-            .setSwapchains(*swapchain)
-            .setImageIndices(activeImageIndex);
+    present_info.setSwapchains(*swapchain).setImageIndices(activeImageIndex);
 
     try {
         vk::Result result = queue.presentKHR(present_info);

@@ -17,7 +17,7 @@ class Camera {
     // Recalculate the projection matrix
     void updateProjectionMatrix_();
 
-   public:
+public:
     glm::vec3 position = {};
     // pitch, yaw, roll in radians
     glm::vec3 angles = {};
@@ -51,9 +51,7 @@ class Camera {
         updateProjectionMatrix_();
     }
 
-    [[nodiscard]] float nearPlane() const {
-        return nearPlane_;
-    }
+    [[nodiscard]] float nearPlane() const { return nearPlane_; }
 
     /**
      * @param fov vertical field of view, in radians
@@ -66,30 +64,18 @@ class Camera {
     /**
      * @return the vertical fov in rad
      */
-    [[nodiscard]] float fov() const {
-        return fov_;
-    }
+    [[nodiscard]] float fov() const { return fov_; }
 
     /**
      * @return the frustum aspect ratio (width / height)
      */
-    [[nodiscard]] float aspect() const {
-        return aspect_;
-    }
+    [[nodiscard]] float aspect() const { return aspect_; }
 
-    [[nodiscard]] glm::mat4 projectionMatrix() const {
-        return projectionMatrix_;
-    }
+    [[nodiscard]] glm::mat4 projectionMatrix() const { return projectionMatrix_; }
 
-    [[nodiscard]] glm::mat4 viewMatrix() const {
-        return viewMatrix_;
-    }
+    [[nodiscard]] glm::mat4 viewMatrix() const { return viewMatrix_; }
 
-    [[nodiscard]] glm::mat3 rotationMatrix() const {
-        return glm::transpose(glm::mat3(viewMatrix_));
-    }
+    [[nodiscard]] glm::mat3 rotationMatrix() const { return glm::transpose(glm::mat3(viewMatrix_)); }
 
-    [[nodiscard]] glm::mat4 viewProjectionMatrix() const {
-        return projectionMatrix_ * viewMatrix_;
-    }
+    [[nodiscard]] glm::mat4 viewProjectionMatrix() const { return projectionMatrix_ * viewMatrix_; }
 };

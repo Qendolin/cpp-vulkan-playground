@@ -1,22 +1,10 @@
 #pragma once
 
-#include <array>
-#include <stdexcept>
-#include <iterator>
 #include <algorithm>
-#include <cassert>
-
 #include <array>
-#include <stdexcept>
-#include <iterator>
-#include <algorithm>
 #include <cassert>
-
-#include <array>
-#include <stdexcept>
 #include <iterator>
-#include <algorithm>
-#include <cassert>
+#include <stdexcept>
 
 namespace util {
     template<typename T, std::size_t N>
@@ -33,7 +21,8 @@ namespace util {
         constexpr static_vector() = default;
 
         constexpr static_vector(std::initializer_list<T> init) {
-            if (init.size() > N) throw std::out_of_range("Initializer list too large");
+            if (init.size() > N)
+                throw std::out_of_range("Initializer list too large");
             std::copy(init.begin(), init.end(), storage_.begin());
             length_ = init.size();
         }
@@ -41,7 +30,8 @@ namespace util {
         template<typename InputIt>
         constexpr static_vector(InputIt first, InputIt last) {
             size_t count = std::distance(first, last);
-            if (count > N) throw std::out_of_range("Range exceeds static_vector capacity");
+            if (count > N)
+                throw std::out_of_range("Range exceeds static_vector capacity");
             std::copy(first, last, storage_.begin());
             length_ = count;
         }
@@ -64,18 +54,21 @@ namespace util {
         constexpr void clear() noexcept { length_ = 0; }
 
         constexpr void push_back(const T &value) {
-            if (length_ >= N) throw std::out_of_range("static_vector capacity exceeded");
+            if (length_ >= N)
+                throw std::out_of_range("static_vector capacity exceeded");
             storage_[length_++] = value;
         }
 
         constexpr void push_back(T &&value) {
-            if (length_ >= N) throw std::out_of_range("static_vector capacity exceeded");
+            if (length_ >= N)
+                throw std::out_of_range("static_vector capacity exceeded");
             storage_[length_++] = std::move(value);
         }
 
         template<typename... Args>
-        constexpr T &emplace_back(Args &&... args) {
-            if (length_ >= N) throw std::out_of_range("static_vector capacity exceeded");
+        constexpr T &emplace_back(Args &&...args) {
+            if (length_ >= N)
+                throw std::out_of_range("static_vector capacity exceeded");
             return storage_[length_++] = T(std::forward<Args>(args)...);
         }
 
@@ -108,12 +101,14 @@ namespace util {
         constexpr const T &operator[](size_t index) const { return storage_[index]; }
 
         constexpr T &at(size_t index) {
-            if (index >= length_) throw std::out_of_range("Index out of range");
+            if (index >= length_)
+                throw std::out_of_range("Index out of range");
             return storage_[index];
         }
 
         constexpr const T &at(size_t index) const {
-            if (index >= length_) throw std::out_of_range("Index out of range");
+            if (index >= length_)
+                throw std::out_of_range("Index out of range");
             return storage_[index];
         }
 
@@ -126,15 +121,17 @@ namespace util {
         constexpr const_iterator cend() const noexcept { return storage_.cbegin() + length_; }
 
         constexpr void erase(iterator pos) {
-            if (pos < begin() || pos >= end()) throw std::out_of_range("Iterator out of range");
+            if (pos < begin() || pos >= end())
+                throw std::out_of_range("Iterator out of range");
             std::move(pos + 1, end(), pos);
             --length_;
         }
 
         constexpr void erase(iterator first, iterator last) {
-            if (first < begin() || last > end() || first > last) throw std::out_of_range("Iterator range invalid");
+            if (first < begin() || last > end() || first > last)
+                throw std::out_of_range("Iterator range invalid");
             std::move(last, end(), first);
             length_ -= last - first;
         }
     };
-}
+} // namespace util

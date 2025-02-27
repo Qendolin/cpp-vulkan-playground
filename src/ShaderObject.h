@@ -12,12 +12,9 @@ class ShaderStage {
     const std::string name;
 
 public:
-    ShaderStage(std::string_view name, vk::ShaderStageFlagBits stage, vk::ShaderCreateFlagsEXT flags,
-                std::vector<uint32_t> &&code);
+    ShaderStage(std::string_view name, vk::ShaderStageFlagBits stage, vk::ShaderCreateFlagsEXT flags, std::vector<uint32_t> &&code);
 
-    [[nodiscard]] vk::ShaderCreateInfoEXT createInfo() const {
-        return create_info;
-    }
+    [[nodiscard]] vk::ShaderCreateInfoEXT createInfo() const { return create_info; }
 };
 
 struct StencilOpConfig {
@@ -48,14 +45,17 @@ private:
     static constexpr std::array<uint32_t, 1> DEFAULT_SAMPLE_MASK = {-1u};
     static constexpr std::array<vk::Bool32, 1> DEFAULT_COLOR_BLEND_ENABLE = {false};
     static constexpr std::array<vk::ColorComponentFlags, 1> DEFAULT_COLOR_WRITE_MASK = {
-        vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
+        vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB |
+        vk::ColorComponentFlagBits::eA
     };
-    static constexpr std::array<vk::ColorBlendEquationEXT, 1> DEFAULT_COLOR_BLEND_EQUATIONS = {
-        vk::ColorBlendEquationEXT{
-            .srcColorBlendFactor = vk::BlendFactor::eOne, .dstColorBlendFactor = vk::BlendFactor::eZero, .colorBlendOp = vk::BlendOp::eAdd,
-            .srcAlphaBlendFactor = vk::BlendFactor::eOne, .dstAlphaBlendFactor = vk::BlendFactor::eZero, .alphaBlendOp = vk::BlendOp::eAdd
-        }
-    };
+    static constexpr std::array<vk::ColorBlendEquationEXT, 1> DEFAULT_COLOR_BLEND_EQUATIONS = {vk::ColorBlendEquationEXT{
+        .srcColorBlendFactor = vk::BlendFactor::eOne,
+        .dstColorBlendFactor = vk::BlendFactor::eZero,
+        .colorBlendOp = vk::BlendOp::eAdd,
+        .srcAlphaBlendFactor = vk::BlendFactor::eOne,
+        .dstAlphaBlendFactor = vk::BlendFactor::eZero,
+        .alphaBlendOp = vk::BlendOp::eAdd,
+    }};
 
 public:
     // vertex config
@@ -112,38 +112,39 @@ class Shader {
 
     static std::vector<vk::ShaderCreateInfoEXT> chainStages(std::initializer_list<ShaderStage> stages);
 
-    Shader(const vk::Device &device, std::vector<vk::ShaderCreateInfoEXT> shader_create_infos, std::span<const vk::DescriptorSetLayout> descriptor_set_layouts,
+    Shader(const vk::Device &device,
+           std::vector<vk::ShaderCreateInfoEXT> shader_create_infos,
+           std::span<const vk::DescriptorSetLayout> descriptor_set_layouts,
            std::span<const vk::PushConstantRange> push_constant_ranges);
 
 public:
-    Shader(const vk::Device &device, std::initializer_list<ShaderStage> stages, std::span<const vk::DescriptorSetLayout> descriptor_set_layouts = {},
+    Shader(const vk::Device &device,
+           std::initializer_list<ShaderStage> stages,
+           std::span<const vk::DescriptorSetLayout> descriptor_set_layouts = {},
            std::span<const vk::PushConstantRange> push_constant_ranges = {})
-        : Shader(device, chainStages(stages), descriptor_set_layouts, push_constant_ranges) {
-    }
+        : Shader(device, chainStages(stages), descriptor_set_layouts, push_constant_ranges) {}
 
-    Shader(const vk::Device &device, const ShaderStage &stage, vk::ShaderStageFlagBits next_stages,
-           std::span<const vk::DescriptorSetLayout> descriptor_set_layouts = {}, std::span<const vk::PushConstantRange> push_constant_ranges = {})
-        : Shader(device, {stage.createInfo().setNextStage(next_stages)}, descriptor_set_layouts, push_constant_ranges) {
-    }
+    Shader(const vk::Device &device,
+           const ShaderStage &stage,
+           vk::ShaderStageFlagBits next_stages,
+           std::span<const vk::DescriptorSetLayout> descriptor_set_layouts = {},
+           std::span<const vk::PushConstantRange> push_constant_ranges = {})
+        : Shader(device, {stage.createInfo().setNextStage(next_stages)}, descriptor_set_layouts, push_constant_ranges) {}
 
-    [[nodiscard]] std::span<const vk::ShaderStageFlagBits> stages() const {
-        return stages_;
-    }
+    [[nodiscard]] std::span<const vk::ShaderStageFlagBits> stages() const { return stages_; }
 
-    [[nodiscard]] vk::ShaderStageFlags stageFlags() const {
-        return stageFlags_;
-    }
+    [[nodiscard]] vk::ShaderStageFlags stageFlags() const { return stageFlags_; }
 
-    [[nodiscard]] std::span<const vk::ShaderEXT> shaders() const {
-        return view;
-    }
+    [[nodiscard]] std::span<const vk::ShaderEXT> shaders() const { return view; }
 
-    [[nodiscard]] vk::PipelineLayout pipelineLayout() const {
-        return *pipeline_layout;
-    }
+    [[nodiscard]] vk::PipelineLayout pipelineLayout() const { return *pipeline_layout; }
 
-    void bindDescriptorSet(vk::CommandBuffer command_buffer, int index, vk::DescriptorSet set,
-                           vk::ArrayProxy<const uint32_t> const &dynamicOffsets = {}) const;
+    void bindDescriptorSet(
+            vk::CommandBuffer command_buffer,
+            int index,
+            vk::DescriptorSet set,
+            vk::ArrayProxy<const uint32_t> const &dynamicOffsets = {}
+    ) const;
 };
 
 class ShaderLoader {
@@ -155,9 +156,7 @@ public:
     bool print = false;
 
 
-    ShaderLoader() {
-        compiler = std::make_unique<ShaderCompiler>();
-    }
+    ShaderLoader() { compiler = std::make_unique<ShaderCompiler>(); }
 
     [[nodiscard]] ShaderStage load(const std::filesystem::path &path, vk::ShaderCreateFlagBitsEXT flags = {}) const;
 };
