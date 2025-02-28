@@ -62,12 +62,22 @@ public:
 
     [[nodiscard]] vk::Image colorImage() const { return swapchainImages.at(activeImageIndex); }
 
+    [[nodiscard]] vk::Image colorImage(int i) const { return swapchainImages.at(i); }
+
     [[nodiscard]] vk::ImageView colorViewSrgb() const { return *swapchainImageViewsSrgb.at(activeImageIndex); }
+
+    [[nodiscard]] vk::ImageView colorViewSrgb(int i) const { return *swapchainImageViewsSrgb.at(i); }
 
     [[nodiscard]] vk::ImageView colorViewLinear() const {
         if (surfaceFormatLinear == vk::Format::eUndefined)
             return colorViewSrgb();
         return *swapchainImageViewsUnorm.at(activeImageIndex);
+    }
+
+    [[nodiscard]] vk::ImageView colorViewLinear(int i) const {
+        if (surfaceFormatLinear == vk::Format::eUndefined)
+            return colorViewSrgb(i);
+        return *swapchainImageViewsUnorm.at(i);
     }
 
     [[nodiscard]] vk::Image depthImage() const { return *depthImage_; }

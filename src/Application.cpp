@@ -14,6 +14,7 @@
 #include "CommandPool.h"
 #include "Descriptors.h"
 #include "FrameResource.h"
+#include "Framebuffer.h"
 #include "GraphicsBackend.h"
 #include "Image.h"
 #include "Logger.h"
@@ -233,7 +234,7 @@ inline SceneUploadData upload_gltf_data(
 
 void Application::run() {
     auto ctx = AppContext({.width = 1600, .height = 900, .title = "Vulkan Playground"});
-    auto frameResources = FrameResourceManager(ctx.swapchain->imageCount());
+    auto frame_resources = FrameResourceManager(ctx.swapchain->imageCount());
 
     const auto device = ctx.device.get();
     auto &allocator = *ctx.device.allocator;
@@ -245,11 +246,13 @@ void Application::run() {
     auto one_time_commands =
             CommandPool(device, ctx.device.mainQueue, ctx.device.mainQueueFamily, CommandPool::UseMode::Single);
 
+#ifdef TRACY_ENABLE
     auto tracy_cmd_pool =
             CommandPool(device, ctx.device.mainQueue, ctx.device.mainQueueFamily, CommandPool::UseMode::ResetIndivitual);
     auto tracy_cmd_buf = tracy_cmd_pool.create();
     TracyVkCtx tracy_context =
             TracyVkContext(ctx.device.physicalDevice, ctx.device.get(), ctx.device.mainQueue, tracy_cmd_buf);
+#endif
 
     DescriptorAllocator descriptor_allocator(device);
     DescriptorSetLayout scene_descriptor_layout(
@@ -271,20 +274,20 @@ void Application::run() {
     gltf::SceneData gltf_data = gltf::load("assets/models/sponza.glb");
     auto scene_data = upload_gltf_data(ctx, gltf_data, descriptor_allocator, material_descriptor_layout);
 
-    auto uniform_buffers = frameResources.create([&] { return UnifromBuffer<SceneUniforms>(allocator); });
+    auto uniform_buffers = frame_resources.create([&] { return UnifromBuffer<SceneUniforms>(allocator); });
 
-    auto scene_descriptor_sets = frameResources.create([&descriptor_allocator, &scene_descriptor_layout] {
+    auto scene_descriptor_sets = frame_resources.create([&descriptor_allocator, &scene_descriptor_layout] {
         return descriptor_allocator.allocate(scene_descriptor_layout);
     });
 
-    for (int i = 0; i < frameResources.size(); ++i) {
+    for (int i = 0; i < frame_resources.size(); ++i) {
         vk::DescriptorBufferInfo uniform_buffer_info = {
             .buffer = uniform_buffers.at(i).buffer(), .offset = 0, .range = sizeof(SceneUniforms)
         };
         device.updateDescriptorSets({scene_descriptor_sets.at(i).write(0).setBufferInfo(uniform_buffer_info)}, {});
     }
 
-    auto draw_command_pools = frameResources.create([&]() {
+    auto draw_command_pools = frame_resources.create([&]() {
         return std::make_unique<CommandPool>(
                 device, ctx.device.mainQueue, ctx.device.mainQueueFamily, CommandPool::UseMode::Reset
         );
@@ -310,12 +313,26 @@ void Application::run() {
     const auto create_semaphore = [&] {
         return device.createSemaphoreUnique(vk::SemaphoreCreateInfo{});
     };
-    auto image_available_semaphores = frameResources.create(create_semaphore);
-    auto render_finished_semaphores = frameResources.create(create_semaphore);
+    auto image_available_semaphores = frame_resources.create(create_semaphore);
+    auto render_finished_semaphores = frame_resources.create(create_semaphore);
     const auto create_signaled_fence = [&] {
         return device.createFenceUnique(vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled});
     };
-    auto in_flight_fences = frameResources.create(create_signaled_fence);
+    auto in_flight_fences = frame_resources.create(create_signaled_fence);
+    auto framebuffers = frame_resources.create([&swapchain] {
+        Framebuffer fb = {};
+        fb.colorAttachments = {{
+            .format = swapchain.colorFormatSrgb(),
+            .range = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
+        }};
+        fb.depthAttachment = Attachment{
+            .image = swapchain.depthImage(),
+            .view = swapchain.depthView(),
+            .format = swapchain.depthFormat(),
+            .range = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
+        };
+        return fb;
+    });
 
     initImGui(ctx);
 
@@ -324,7 +341,7 @@ void Application::run() {
     Camera camera(90, 0.1, {}, {});
     FrameTimes frame_times = {};
     while (!ctx.window.get().shouldClose()) {
-        frameResources.advance();
+        frame_resources.advance();
         auto &in_flight_fence = in_flight_fences.current();
         {
             ZoneScopedN("Wait Swapchain Fence");
@@ -419,40 +436,17 @@ void Application::run() {
             TracyVkNamedZone(tracy_context, __tracy_cmd_buf_zone, cmd_buf, "Record Commands", true);
             ZoneScopedN("Record Commands");
 
-            ImageRef color_attachment(
-                    swapchain.colorImage(), swapchain.colorFormatSrgb(),
-                    {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1}
-            );
-            ImageRef depth_attachment(
-                    swapchain.depthImage(), swapchain.depthFormat(),
-                    {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1}
-            );
-            color_attachment.barrier(cmd_buf, ImageResourceAccess::COLOR_ATTACHMENT_WRITE);
-            depth_attachment.barrier(
+            auto &framebuffer = framebuffers.current();
+            framebuffer.colorAttachments[0].image = swapchain.colorImage();
+            framebuffer.colorAttachments[0].view = swapchain.colorViewSrgb();
+            framebuffer.barrierColor(cmd_buf, ImageResourceAccess::COLOR_ATTACHMENT_WRITE);
+            framebuffer.barrierDepth(
                     cmd_buf, ImageResourceAccess::DEPTH_ATTACHMENT_READ, ImageResourceAccess::DEPTH_ATTACHMENT_WRITE
             );
-
-            vk::RenderingAttachmentInfoKHR color_attachment_info{
-                .imageView = swapchain.colorViewSrgb(),
-                .imageLayout = vk::ImageLayout::eAttachmentOptimal,
-                .loadOp = vk::AttachmentLoadOp::eClear,
-                .clearValue = {.color = {.float32 = std::array{0.0f, 0.0f, 0.0f, 1.0f}}}
-            };
-            vk::RenderingAttachmentInfoKHR depth_attachment_info{
-                .imageView = swapchain.depthView(),
-                .imageLayout = vk::ImageLayout::eAttachmentOptimal,
-                .loadOp = vk::AttachmentLoadOp::eClear,
-                .clearValue = {.depthStencil = {0.0f, 0}}
-            };
-            vk::RenderingInfoKHR redering_info = {
-                .renderArea = swapchain.area(),
-                .layerCount = 1,
-                .colorAttachmentCount = 1,
-                .pColorAttachments = &color_attachment_info,
-                .pDepthAttachment = &depth_attachment_info
-            };
-            cmd_buf.beginRendering(redering_info);
-            cmd_buf.bindShadersEXT(shader.stages(), shader.shaders());
+            cmd_buf.beginRendering(framebuffer.renderingInfo(
+                    swapchain.area(),
+                    {.colorLoadOps = {vk::AttachmentLoadOp::eClear}, .depthLoadOp = vk::AttachmentLoadOp::eClear}
+            ));
 
             PipelineConfig pipeline_config = {
                 .vertexBindingDescriptions = gltf::Vertex::bindingDescriptors,
@@ -465,6 +459,7 @@ void Application::run() {
             };
             pipeline_config.apply(cmd_buf, shader.stageFlags());
 
+            cmd_buf.bindShadersEXT(shader.stages(), shader.shaders());
             cmd_buf.bindVertexBuffers(
                     0, {*scene_data.positions, *scene_data.normals, *scene_data.tangents, *scene_data.texcoords},
                     {0, 0, 0, 0}
@@ -488,19 +483,16 @@ void Application::run() {
             // draw imgui last
             {
                 TracyVkNamedZone(tracy_context, __tracy_imgui_render_zone, cmd_buf, "ImGui Render", true);
-                color_attachment_info.imageView = swapchain.colorViewLinear();
-                color_attachment_info.loadOp = vk::AttachmentLoadOp::eLoad;
-                depth_attachment_info.loadOp = vk::AttachmentLoadOp::eLoad;
-                cmd_buf.beginRendering(redering_info);
+                framebuffer.colorAttachments[0].view = swapchain.colorViewLinear();
+                cmd_buf.beginRendering(framebuffer.renderingInfo(swapchain.area(), {}));
                 ImGui::Render();
                 ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd_buf);
             }
 
             cmd_buf.endRendering();
-            color_attachment.barrier(cmd_buf, ImageResourceAccess::PRESENT_SRC);
-
-            cmd_buf.end();
+            framebuffer.barrierColor(cmd_buf, ImageResourceAccess::PRESENT_SRC);
         }
+        cmd_buf.end();
 
         {
             ZoneScopedN("Submit & Present");

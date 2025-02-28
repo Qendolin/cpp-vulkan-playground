@@ -16,8 +16,8 @@ class FrameResource {
     std::vector<T> pool = {};
 
 public:
-    FrameResource(const FrameResourceManager *manager, std::vector<T> &&pool) :
-        manager(manager), pool(std::move(pool)) {}
+    FrameResource(const FrameResourceManager *manager, std::vector<T> &&pool)
+        : manager(manager), pool(std::move(pool)) {}
 
     ~FrameResource() = default;
 
@@ -51,13 +51,23 @@ public:
 
     template<typename Supplier>
     auto create(Supplier &&supplier) {
-        using T = std::invoke_result_t<Supplier>;
-        std::vector<T> pool;
-        pool.reserve(size_);
-        for (int i = 0; i < size_; ++i) {
-            pool.emplace_back(supplier());
+        if constexpr (std::is_invocable_v<Supplier, int>) {
+            using T = std::invoke_result_t<Supplier, int>;
+            std::vector<T> pool;
+            pool.reserve(size_);
+            for (int i = 0; i < size_; ++i) {
+                pool.emplace_back(supplier(i));
+            }
+            return FrameResource<T>(this, std::move(pool));
+        } else {
+            using T = std::invoke_result_t<Supplier>;
+            std::vector<T> pool;
+            pool.reserve(size_);
+            for (int i = 0; i < size_; ++i) {
+                pool.emplace_back(supplier());
+            }
+            return FrameResource<T>(this, std::move(pool));
         }
-        return FrameResource<T>(this, std::move(pool));
     }
 };
 

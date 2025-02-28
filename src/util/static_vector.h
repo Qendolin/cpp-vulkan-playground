@@ -9,7 +9,7 @@
 namespace util {
     template<typename T, std::size_t N>
     class static_vector {
-        std::array<T, N> storage_;
+        std::array<T, N> storage_ = {};
         std::size_t length_ = 0;
 
     public:
@@ -18,7 +18,7 @@ namespace util {
         using iterator = typename std::array<T, N>::iterator;
         using const_iterator = typename std::array<T, N>::const_iterator;
 
-        constexpr static_vector() = default;
+        constexpr static_vector(){}; // NOLINT(*-use-equals-default)
 
         constexpr static_vector(std::initializer_list<T> init) {
             if (init.size() > N)

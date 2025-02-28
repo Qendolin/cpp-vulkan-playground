@@ -78,12 +78,13 @@ class ImageResource {
 protected:
     ImageResourceAccess prevAccess = {};
 
-    void
-    barrier(vk::Image image,
+    void barrier(
+            vk::Image image,
             vk::ImageSubresourceRange range,
             const vk::CommandBuffer &cmd_buf,
             const ImageResourceAccess &begin,
-            const ImageResourceAccess &end);
+            const ImageResourceAccess &end
+    );
 };
 
 
@@ -137,7 +138,7 @@ public:
     vk::Format format;
     vk::ImageSubresourceRange range;
 
-    explicit ImageRef(vk::Image image, vk::Format format, vk::ImageSubresourceRange range);
+    ImageRef(vk::Image image, vk::Format format, vk::ImageSubresourceRange range);
 
     void barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &begin, const ImageResourceAccess &end);
 
