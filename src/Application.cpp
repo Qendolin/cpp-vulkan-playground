@@ -6,9 +6,6 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/fast_trigonometry.hpp>
 #include <vulkan/vulkan.hpp>
-// after vulkan
-#include <tracy/Tracy.hpp>
-#include <tracy/TracyVulkan.hpp>
 
 #include "Camera.h"
 #include "CommandPool.h"
@@ -23,30 +20,11 @@
 #include "Swapchain.h"
 #include "UniformBuffer.h"
 #include "debug/Performance.h"
+#include "debug/Tracy.h"
 #include "glfw/Input.h"
 #include "gltf/Gltf.h"
 #include "imgui/ImGui.h"
-
-Application::Application() = default;
-
-Application::~Application() = default;
-
-// Utility type for uniforms structs, ensures sequential write on assignment
-#define MEMCPY_ASSIGNMENT(T)                                                                                           \
-    T &operator=(const T &other) {                                                                                     \
-        if (this != &other) {                                                                                          \
-            std::memcpy(this, &other, sizeof(T)); /* NOLINT(*-undefined-memory-manipulation) */                        \
-        }                                                                                                              \
-        return *this;                                                                                                  \
-    }
-
-#if defined(__clang__)
-#define TRIVIAL_ABI [[clang::trivial_abi]]
-#elif defined(__GNUC__) || defined(__GNUG__)
-#define TRIVIAL_ABI [[gnu::trivial_abi]]
-#else
-#define TRIVIAL_ABI
-#endif
+#include "util/buffer_struct.h"
 
 struct TRIVIAL_ABI alignas(16) SceneUniforms {
     glm::mat4 view;
@@ -66,7 +44,7 @@ struct TRIVIAL_ABI alignas(16) MaterialUniforms {
 inline Image load_image(Commands &commands, IStagingBuffer &staging, const PlainImageData &data) {
     auto [buffer, ptr] = staging.upload(commands, data.pixels.size_bytes(), data.pixels.data());
     Image image = Image::create(staging.allocator(), ImageCreateInfo::from(data));
-    image.barrier(*commands, ImageResourceAccess::TRANSFER_WRITE);
+    image.barrier(*commands, ImageResourceAccess::TransferWrite);
     image.load(*commands, 0, {}, buffer);
     commands.trash += buffer;
     return image;
@@ -118,8 +96,33 @@ inline auto create_default_resources(Commands &commands, IStagingBuffer &staging
     return std::tuple{std::move(default_albedo), std::move(default_normal), std::move(default_omr)};
 }
 
+struct MaterialDescriptorSetLayout : DescriptorSetLayoutBase {
+    static constexpr auto Albedo = combinedImageSampler(0, ShaderStage::eFragment);
+    static constexpr auto Normal = combinedImageSampler(1, ShaderStage::eFragment);
+    static constexpr auto Omr = combinedImageSampler(2, ShaderStage::eFragment);
+    static constexpr auto MaterialFactors = inlineUniformBlock(3, ShaderStage::eFragment, sizeof(MaterialUniforms));
+
+    inline static const auto Bindings = validate(Albedo, Normal, Omr, MaterialFactors);
+
+    explicit MaterialDescriptorSetLayout(const vk::Device &device, vk::DescriptorSetLayoutCreateFlags flags = {})
+        : DescriptorSetLayoutBase(device, flags, Bindings) {}
+
+    ~MaterialDescriptorSetLayout() override = default;
+};
+
+struct SceneDescriptorSetLayout : DescriptorSetLayoutBase {
+    static constexpr auto SceneUniforms = uniformBuffer(0, ShaderStage::eVertex | ShaderStage::eFragment);
+
+    inline static const auto Bindings = validate(SceneUniforms);
+
+    explicit SceneDescriptorSetLayout(const vk::Device &device, vk::DescriptorSetLayoutCreateFlags flags = {})
+        : DescriptorSetLayoutBase(device, flags, Bindings) {}
+
+    ~SceneDescriptorSetLayout() override {}
+};
+
 inline SceneUploadData upload_gltf_data(
-        const AppContext &ctx, gltf::SceneData &gltf_data, DescriptorAllocator &descriptor_allocator, DescriptorSetLayout &descriptor_layout
+        const AppContext &ctx, gltf::SceneData &gltf_data, DescriptorAllocator &descriptor_allocator
 ) {
     SceneUploadData result;
 
@@ -156,7 +159,7 @@ inline SceneUploadData upload_gltf_data(
         auto &image = result.images.emplace_back();
         image = load_image(commands, staging, image_data);
         image.generateMipmaps(*commands);
-        image.barrier(*commands, ImageResourceAccess::FRAGMENT_SHADER_READ);
+        image.barrier(*commands, ImageResourceAccess::FragmentShaderRead);
 
         result.views.emplace_back() = image.createDefaultView(device);
     }
@@ -164,6 +167,7 @@ inline SceneUploadData upload_gltf_data(
     commands.submit();
     commands.begin();
 
+    auto descriptor_layout = MaterialDescriptorSetLayout(device);
     result.descriptors.reserve(gltf_data.materials.size());
     for (auto &material: gltf_data.materials) {
         result.descriptors.emplace_back() = descriptor_allocator.allocate(descriptor_layout);
@@ -178,7 +182,7 @@ inline SceneUploadData upload_gltf_data(
             .imageView = material.normal == -1 ? *result.defaultNormalView : *result.views.at(material.normal),
             .imageLayout = vk::ImageLayout::eReadOnlyOptimal
         };
-        vk::DescriptorImageInfo orm_image_info = {
+        vk::DescriptorImageInfo omr_image_info = {
             .sampler = *result.sampler,
             .imageView = material.omr == -1 ? *result.defaultOmrView : *result.views.at(material.omr),
             .imageLayout = vk::ImageLayout::eReadOnlyOptimal
@@ -190,10 +194,10 @@ inline SceneUploadData upload_gltf_data(
         vk::WriteDescriptorSetInlineUniformBlock mat_info = {.dataSize = sizeof(MaterialUniforms), .pData = &material_uniforms};
         device.updateDescriptorSets(
                 {
-                    descriptor_set.write(0).setPImageInfo(&albedo_image_info),
-                    descriptor_set.write(1).setPImageInfo(&normal_image_info),
-                    descriptor_set.write(2).setPImageInfo(&orm_image_info),
-                    descriptor_set.write(3).setPNext(&mat_info),
+                    descriptor_set.write(MaterialDescriptorSetLayout::Albedo, albedo_image_info),
+                    descriptor_set.write(MaterialDescriptorSetLayout::Normal, normal_image_info),
+                    descriptor_set.write(MaterialDescriptorSetLayout::Omr, omr_image_info),
+                    descriptor_set.write(MaterialDescriptorSetLayout::MaterialFactors, mat_info),
                 },
                 {}
         );
@@ -232,83 +236,110 @@ inline SceneUploadData upload_gltf_data(
     return result;
 }
 
-void Application::run() {
-    auto ctx = AppContext({.width = 1600, .height = 900, .title = "Vulkan Playground"});
-    auto frame_resources = FrameResourceManager(ctx.swapchain->imageCount());
+Application::Application(AppContext &ctx) : ctx(ctx), input_(*ctx.window.input) {};
 
+Application::~Application() = default;
+
+void Application::loadShader() {
+    auto scene_layout = SceneDescriptorSetLayout(ctx.device.get());
+    auto material_layout = MaterialDescriptorSetLayout(ctx.device.get());
+
+    ShaderInterfaceLayout shader_layout = {
+        .descriptorSetLayouts = {scene_layout.layout, material_layout.layout},
+        .pushConstantRanges = {{.stageFlags = vk::ShaderStageFlagBits::eVertex, .offset = 0, .size = sizeof(glm::mat4)}}
+    };
+
+    auto vert_sh = shaderLoader_->load("assets/shaders/test.vert");
+    auto frag_sh = shaderLoader_->load("assets/shaders/test.frag");
+    shader_ = std::make_unique<Shader>(
+            ctx.device.get(), std::initializer_list<ShaderStage>{vert_sh, frag_sh},
+            std::span(shader_layout.descriptorSetLayouts), std::span(shader_layout.pushConstantRanges)
+    );
+}
+
+
+void Application::updateInput(Camera &camera) {
+    ZoneScopedN("Input Update");
+    if (input_.isKeyPress(GLFW_KEY_F5)) {
+        Logger::info("Reloading shader");
+        try {
+            loadShader();
+        } catch (const std::exception &exc) {
+            Logger::error("Reload failed: " + std::string(exc.what()));
+        }
+    }
+
+    if (input_.isMouseReleased() && input_.isMousePress(GLFW_MOUSE_BUTTON_LEFT)) {
+        if (!ImGui::GetIO().WantCaptureMouse)
+            input_.captureMouse();
+    } else if (input_.isMouseCaptured() && input_.isKeyPress(GLFW_KEY_LEFT_ALT)) {
+        input_.releaseMouse();
+    }
+
+    if (input_.isMouseCaptured()) {
+        ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NoMouse;
+    } else {
+        ImGui::GetIO().ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
+    }
+
+    if (input_.isMouseCaptured()) {
+        // yaw
+        camera.angles.y -= input_.mouseDelta().x * glm::radians(0.15f);
+        camera.angles.y = glm::wrapAngle(camera.angles.y);
+
+        // pitch
+        camera.angles.x -= input_.mouseDelta().y * glm::radians(0.15f);
+        camera.angles.x = glm::clamp(camera.angles.x, -glm::half_pi<float>(), glm::half_pi<float>());
+
+        glm::vec3 move_input = {
+            input_.isKeyDown(GLFW_KEY_D) - input_.isKeyDown(GLFW_KEY_A),
+            input_.isKeyDown(GLFW_KEY_SPACE) - input_.isKeyDown(GLFW_KEY_LEFT_CONTROL),
+            input_.isKeyDown(GLFW_KEY_S) - input_.isKeyDown(GLFW_KEY_W)
+        };
+        glm::vec3 velocity = move_input * 5.0f;
+        velocity = glm::mat3(glm::rotate(glm::mat4(1.0), camera.angles.y, {0, 1, 0})) * velocity;
+        camera.position += velocity * input_.timeDelta();
+    }
+    camera.updateViewMatrix();
+}
+
+void Application::run() {
     const auto device = ctx.device.get();
     auto &allocator = *ctx.device.allocator;
     auto &input = *ctx.window.input;
     auto &swapchain = *ctx.swapchain;
     assert(ctx.swapchain != nullptr); // clion/clangd needs this
-    auto transfer_commands =
-            CommandPool(device, ctx.device.transferQueue, ctx.device.transferQueueFamily, CommandPool::UseMode::Single);
-    auto one_time_commands =
-            CommandPool(device, ctx.device.mainQueue, ctx.device.mainQueueFamily, CommandPool::UseMode::Single);
 
-#ifdef TRACY_ENABLE
-    auto tracy_cmd_pool =
-            CommandPool(device, ctx.device.mainQueue, ctx.device.mainQueueFamily, CommandPool::UseMode::ResetIndivitual);
-    auto tracy_cmd_buf = tracy_cmd_pool.create();
-    TracyVkCtx tracy_context =
-            TracyVkContext(ctx.device.physicalDevice, ctx.device.get(), ctx.device.mainQueue, tracy_cmd_buf);
-#endif
+    TracyContext::create(ctx.device.physicalDevice, device, ctx.device.mainQueue, ctx.device.mainQueueFamily);
 
     DescriptorAllocator descriptor_allocator(device);
-    DescriptorSetLayout scene_descriptor_layout(
-            device, {},
-            DescriptorBinding(
-                    0, vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
-            ) // uniforms
-    );
-    DescriptorSetLayout material_descriptor_layout(
-            device, {},
-            DescriptorBinding(0, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment), // albedo
-            DescriptorBinding(1, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment), // normal
-            DescriptorBinding(2, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment), // omr
-            DescriptorBinding(
-                    3, vk::DescriptorType::eInlineUniformBlock, vk::ShaderStageFlagBits::eFragment, sizeof(MaterialUniforms)
-            ) // material factors
-    );
+
+    auto scene_descriptor_layout = SceneDescriptorSetLayout(device);
 
     gltf::SceneData gltf_data = gltf::load("assets/models/sponza.glb");
-    auto scene_data = upload_gltf_data(ctx, gltf_data, descriptor_allocator, material_descriptor_layout);
+    auto scene_data = upload_gltf_data(ctx, gltf_data, descriptor_allocator);
 
+    auto frame_resources = FrameResourceManager(ctx.swapchain->imageCount());
     auto uniform_buffers = frame_resources.create([&] { return UnifromBuffer<SceneUniforms>(allocator); });
-
-    auto scene_descriptor_sets = frame_resources.create([&descriptor_allocator, &scene_descriptor_layout] {
-        return descriptor_allocator.allocate(scene_descriptor_layout);
-    });
-
-    for (int i = 0; i < frame_resources.size(); ++i) {
+    auto scene_descriptor_sets = frame_resources.create([&](int i) {
+        auto set = descriptor_allocator.allocate(scene_descriptor_layout);
         vk::DescriptorBufferInfo uniform_buffer_info = {
             .buffer = uniform_buffers.at(i).buffer(), .offset = 0, .range = sizeof(SceneUniforms)
         };
-        device.updateDescriptorSets({scene_descriptor_sets.at(i).write(0).setBufferInfo(uniform_buffer_info)}, {});
-    }
-
+        device.updateDescriptorSets({set.write(SceneDescriptorSetLayout::SceneUniforms, uniform_buffer_info)}, {});
+        return set;
+    });
     auto draw_command_pools = frame_resources.create([&]() {
         return std::make_unique<CommandPool>(
                 device, ctx.device.mainQueue, ctx.device.mainQueueFamily, CommandPool::UseMode::Reset
         );
     });
 
-    auto loader = ShaderLoader();
+    shaderLoader_ = std::make_unique<ShaderLoader>();
 #ifndef NDEBUG
-    loader.debug = true;
+    shaderLoader_->debug = true;
 #endif
-    std::array descriptor_set_layouts = {scene_descriptor_layout.get(), material_descriptor_layout.get()};
-    vk::PushConstantRange push_constant_range = {
-        .stageFlags = vk::ShaderStageFlagBits::eVertex, .offset = 0, .size = sizeof(glm::mat4)
-    };
-    std::array push_constant_ranges = {push_constant_range};
-
-    const auto load_shader = [&]() {
-        auto vert_sh = loader.load("assets/shaders/test.vert");
-        auto frag_sh = loader.load("assets/shaders/test.frag");
-        return Shader(device, {vert_sh, frag_sh}, descriptor_set_layouts, push_constant_ranges);
-    };
-    auto shader = load_shader();
+    loadShader();
 
     const auto create_semaphore = [&] {
         return device.createSemaphoreUnique(vk::SemaphoreCreateInfo{});
@@ -334,11 +365,11 @@ void Application::run() {
         return fb;
     });
 
-    initImGui(ctx);
+    auto im_gui_backend = ImGuiBackend(ctx.device, ctx.window.get(), *ctx.swapchain);
 
     FrameMark;
 
-    Camera camera(90, 0.1, {}, {});
+    Camera camera(90, 0.1f, {}, {});
     FrameTimes frame_times = {};
     while (!ctx.window.get().shouldClose()) {
         frame_resources.advance();
@@ -365,62 +396,16 @@ void Application::run() {
         // Start of rendering and application code
         //
 
-        ImGui_ImplVulkan_NewFrame();
-        ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
+        im_gui_backend.begin();
 
-        {
-            ZoneScopedN("Logic Update");
-            if (input.isKeyPress(GLFW_KEY_F5)) {
-                Logger::info("Reloading shader");
-                try {
-                    shader = load_shader();
-                } catch (const std::exception &exc) {
-                    Logger::error("Reload failed: " + std::string(exc.what()));
-                }
-            }
+        updateInput(camera);
 
-            if (input.isMouseReleased() && input.isMousePress(GLFW_MOUSE_BUTTON_LEFT)) {
-                if (!ImGui::GetIO().WantCaptureMouse)
-                    input.captureMouse();
-            } else if (input.isMouseCaptured() && input.isKeyPress(GLFW_KEY_LEFT_ALT)) {
-                input.releaseMouse();
-            }
-
-            if (input.isMouseCaptured()) {
-                ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NoMouse;
-            } else {
-                ImGui::GetIO().ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
-            }
-
-            if (input.isMouseCaptured()) {
-                // yaw
-                camera.angles.y -= input.mouseDelta().x * glm::radians(0.15f);
-                camera.angles.y = glm::wrapAngle(camera.angles.y);
-
-                // pitch
-                camera.angles.x -= input.mouseDelta().y * glm::radians(0.15f);
-                camera.angles.x = glm::clamp(camera.angles.x, -glm::half_pi<float>(), glm::half_pi<float>());
-
-                glm::vec3 move_input = {
-                    input.isKeyDown(GLFW_KEY_D) - input.isKeyDown(GLFW_KEY_A),
-                    input.isKeyDown(GLFW_KEY_SPACE) - input.isKeyDown(GLFW_KEY_LEFT_CONTROL),
-                    input.isKeyDown(GLFW_KEY_S) - input.isKeyDown(GLFW_KEY_W)
-                };
-                glm::vec3 velocity = move_input * 5.0f;
-                velocity = glm::mat3(glm::rotate(glm::mat4(1.0), camera.angles.y, {0, 1, 0})) * velocity;
-                camera.position += velocity * input.timeDelta();
-            }
-
-            camera.setViewport(swapchain.width(), swapchain.height());
-            camera.updateViewMatrix();
-
-            SceneUniforms uniforms = {
-                .view = camera.viewMatrix(), .proj = camera.projectionMatrix(), .camera = glm::vec4(camera.position, 1.0)
-            };
-
-            uniform_buffers->front() = uniforms;
-        }
+        camera.setViewport(swapchain.width(), swapchain.height());
+        uniform_buffers->front() = {
+            .view = camera.viewMatrix(),
+            .proj = camera.projectionMatrix(),
+            .camera = glm::vec4(camera.position, 1.0),
+        };
 
         vk::CommandBuffer cmd_buf;
         {
@@ -432,16 +417,16 @@ void Application::run() {
         }
 
         {
-            TracyVkCollect(tracy_context, cmd_buf);
-            TracyVkNamedZone(tracy_context, __tracy_cmd_buf_zone, cmd_buf, "Record Commands", true);
+            TracyVkCollect(TracyContext::Vulkan, cmd_buf);
+            TracyVkNamedZone(TracyContext::Vulkan, __tracy_cmd_buf_zone, cmd_buf, "Record Commands", true);
             ZoneScopedN("Record Commands");
 
             auto &framebuffer = framebuffers.current();
             framebuffer.colorAttachments[0].image = swapchain.colorImage();
             framebuffer.colorAttachments[0].view = swapchain.colorViewSrgb();
-            framebuffer.barrierColor(cmd_buf, ImageResourceAccess::COLOR_ATTACHMENT_WRITE);
+            framebuffer.barrierColor(cmd_buf, ImageResourceAccess::ColorAttachmentWrite);
             framebuffer.barrierDepth(
-                    cmd_buf, ImageResourceAccess::DEPTH_ATTACHMENT_READ, ImageResourceAccess::DEPTH_ATTACHMENT_WRITE
+                    cmd_buf, ImageResourceAccess::DepthAttachmentRead, ImageResourceAccess::DepthAttachmentWrite
             );
             cmd_buf.beginRendering(framebuffer.renderingInfo(
                     swapchain.area(),
@@ -457,21 +442,21 @@ void Application::run() {
                 .frontFace = vk::FrontFace::eCounterClockwise, // TODO: why CCW?!?
                 .depthCompareOp = vk::CompareOp::eGreaterOrEqual
             };
-            pipeline_config.apply(cmd_buf, shader.stageFlags());
+            pipeline_config.apply(cmd_buf, shader_->stageFlags());
 
-            cmd_buf.bindShadersEXT(shader.stages(), shader.shaders());
+            cmd_buf.bindShadersEXT(shader_->stages(), shader_->shaders());
             cmd_buf.bindVertexBuffers(
                     0, {*scene_data.positions, *scene_data.normals, *scene_data.tangents, *scene_data.texcoords},
                     {0, 0, 0, 0}
             );
             cmd_buf.bindIndexBuffer(*scene_data.indices, 0, vk::IndexType::eUint32);
-            shader.bindDescriptorSet(cmd_buf, 0, scene_descriptor_sets.current().get());
+            shader_->bindDescriptorSet(cmd_buf, 0, scene_descriptor_sets.current().set);
 
             for (const auto &instance: gltf_data.instances) {
-                shader.bindDescriptorSet(cmd_buf, 1, scene_data.descriptors[instance.material.index].get());
+                shader_->bindDescriptorSet(cmd_buf, 1, scene_data.descriptors[instance.material.index].set);
 
                 cmd_buf.pushConstants(
-                        shader.pipelineLayout(), vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &instance.transformation
+                        shader_->pipelineLayout(), vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &instance.transformation
                 );
                 cmd_buf.drawIndexed(instance.indexCount, 1, instance.indexOffset, instance.vertexOffset, 0);
             }
@@ -480,17 +465,12 @@ void Application::run() {
             frame_times.update(input.timeDelta());
             frame_times.draw();
 
-            // draw imgui last
-            {
-                TracyVkNamedZone(tracy_context, __tracy_imgui_render_zone, cmd_buf, "ImGui Render", true);
-                framebuffer.colorAttachments[0].view = swapchain.colorViewLinear();
-                cmd_buf.beginRendering(framebuffer.renderingInfo(swapchain.area(), {}));
-                ImGui::Render();
-                ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd_buf);
-            }
-
+            framebuffer.colorAttachments[0].view = swapchain.colorViewLinear();
+            cmd_buf.beginRendering(framebuffer.renderingInfo(swapchain.area(), {}));
+            im_gui_backend.render(cmd_buf);
             cmd_buf.endRendering();
-            framebuffer.barrierColor(cmd_buf, ImageResourceAccess::PRESENT_SRC);
+
+            framebuffer.barrierColor(cmd_buf, ImageResourceAccess::PresentSrc);
         }
         cmd_buf.end();
 
@@ -516,5 +496,6 @@ void Application::run() {
     ImGui_ImplVulkan_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
-    TracyVkDestroy(tracy_context);
+
+    TracyContext::destroy(device);
 }

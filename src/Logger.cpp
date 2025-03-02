@@ -61,6 +61,6 @@ void Logger::check(bool be_true, std::string_view message, std::source_location 
 #endif
 }
 
-void Logger::panic(std::string_view message, const cpptrace::stacktrace &trace) {
+[[noreturn]] void Logger::panic(std::string_view message, const cpptrace::stacktrace &trace) {
     throw std::runtime_error(std::format("PANIC: {}\n{}", message, trace.to_string(true)));
 }

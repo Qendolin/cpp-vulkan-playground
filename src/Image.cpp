@@ -10,37 +10,37 @@
 #include "GraphicsBackend.h"
 #include "Logger.h"
 
-constexpr ImageResourceAccess ImageResourceAccess::TRANSFER_WRITE = {
+constexpr ImageResourceAccess ImageResourceAccess::TransferWrite = {
     .stage = vk::PipelineStageFlagBits2::eTransfer,
     .access = vk::AccessFlagBits2::eTransferWrite,
     .layout = vk::ImageLayout::eTransferDstOptimal
 };
 
-constexpr ImageResourceAccess ImageResourceAccess::FRAGMENT_SHADER_READ = {
+constexpr ImageResourceAccess ImageResourceAccess::FragmentShaderRead = {
     .stage = vk::PipelineStageFlagBits2::eFragmentShader,
     .access = vk::AccessFlagBits2::eShaderRead,
     .layout = vk::ImageLayout::eTransferDstOptimal
 };
 
-constexpr ImageResourceAccess ImageResourceAccess::COLOR_ATTACHMENT_WRITE = {
+constexpr ImageResourceAccess ImageResourceAccess::ColorAttachmentWrite = {
     .stage = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
     .access = vk::AccessFlagBits2::eColorAttachmentWrite,
     .layout = vk::ImageLayout::eAttachmentOptimal
 };
 
-constexpr ImageResourceAccess ImageResourceAccess::DEPTH_ATTACHMENT_READ = {
+constexpr ImageResourceAccess ImageResourceAccess::DepthAttachmentRead = {
     .stage = vk::PipelineStageFlagBits2::eEarlyFragmentTests,
     .access = vk::AccessFlagBits2::eDepthStencilAttachmentRead,
     .layout = vk::ImageLayout::eAttachmentOptimal
 };
 
-constexpr ImageResourceAccess ImageResourceAccess::DEPTH_ATTACHMENT_WRITE = {
+constexpr ImageResourceAccess ImageResourceAccess::DepthAttachmentWrite = {
     .stage = vk::PipelineStageFlagBits2::eLateFragmentTests,
     .access = vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
     .layout = vk::ImageLayout::eAttachmentOptimal
 };
 
-constexpr ImageResourceAccess ImageResourceAccess::PRESENT_SRC = {
+constexpr ImageResourceAccess ImageResourceAccess::PresentSrc = {
     .stage = vk::PipelineStageFlagBits2::eBottomOfPipe, .access = vk::AccessFlagBits2::eNone, .layout = vk::ImageLayout::ePresentSrcKHR
 };
 
@@ -284,7 +284,7 @@ void Image::load(const vk::CommandBuffer &cmd_buf, uint32_t level, vk::Extent3D 
     if (region.depth == 0)
         region.depth = info.depth;
 
-    barrier(cmd_buf, ImageResourceAccess::TRANSFER_WRITE);
+    barrier(cmd_buf, ImageResourceAccess::TransferWrite);
 
     vk::BufferImageCopy image_copy = {
         .imageSubresource = {.aspectMask = imageAspectFlags(), .mipLevel = level, .layerCount = 1},
@@ -294,7 +294,7 @@ void Image::load(const vk::CommandBuffer &cmd_buf, uint32_t level, vk::Extent3D 
 }
 
 void Image::generateMipmaps(const vk::CommandBuffer &cmd_buf) {
-    barrier(cmd_buf, ImageResourceAccess::TRANSFER_WRITE);
+    barrier(cmd_buf, ImageResourceAccess::TransferWrite);
 
     vk::ImageMemoryBarrier2 barrier = {
         .srcQueueFamilyIndex = vk::QueueFamilyIgnored,

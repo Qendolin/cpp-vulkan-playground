@@ -2,77 +2,162 @@
 
 #include <vulkan/vulkan.hpp>
 
-constexpr vk::DescriptorSetLayoutBinding DescriptorBinding(
-        uint32_t index, vk::DescriptorType type, vk::ShaderStageFlags stages, uint32_t count = 1
-) {
-    return {index, type, count, stages};
-}
+template<vk::DescriptorType Type>
+struct DescriptorBinding : vk::DescriptorSetLayoutBinding {
 
-class DescriptorSetLayout {
-    template<typename... Args>
-    static constexpr bool areBindingsSortedAndUnique(Args... args) {
-        std::array indices{args.binding...};
-        return std::ranges::is_sorted(indices) && std::ranges::adjacent_find(indices) == indices.end();
-    }
+    consteval DescriptorBinding() noexcept = default;
 
-public:
-    const std::vector<vk::DescriptorSetLayoutBinding> bindings;
+    explicit consteval DescriptorBinding(uint32_t index, uint32_t count, vk::ShaderStageFlags stages) noexcept
+        : vk::DescriptorSetLayoutBinding({index, Type, count, stages}) {}
 
-    explicit DescriptorSetLayout(
-            vk::Device device,
-            vk::DescriptorSetLayoutCreateFlags flags,
-            std::convertible_to<vk::DescriptorSetLayoutBinding> auto... args
-    )
-        : bindings{args...},
-          layout(device.createDescriptorSetLayoutUnique(
-                  {.flags = flags, .bindingCount = static_cast<uint32_t>(bindings.size()), .pBindings = bindings.data()}
-          )) {
-        if (!areBindingsSortedAndUnique(args...)) {
-            throw std::runtime_error("Binding indices must be sorted and unique");
-        }
-    }
-
-    [[nodiscard]] vk::DescriptorSetLayout get() const { return layout.get(); }
-
-private:
-    const vk::UniqueDescriptorSetLayout layout;
+    explicit consteval DescriptorBinding(const vk::DescriptorSetLayoutBinding &binding) noexcept
+        : vk::DescriptorSetLayoutBinding(binding) {}
 };
 
-class DescriptorSet {
-    vk::DescriptorSet set;
-    std::vector<vk::DescriptorSetLayoutBinding> bindings;
+class DescriptorSetLayoutBase {
+    vk::UniqueDescriptorSetLayout handle_;
 
 public:
-    DescriptorSet() = default;
+    std::span<const vk::DescriptorSetLayoutBinding> bindings;
+    vk::DescriptorSetLayout layout;
 
-    explicit DescriptorSet(vk::DescriptorSet set, std::vector<vk::DescriptorSetLayoutBinding> &&bindings)
-        : set(set), bindings(std::move(bindings)) {}
+    virtual ~DescriptorSetLayoutBase() = default;
 
-    DescriptorSet(const DescriptorSet &other) = delete;
+    DescriptorSetLayoutBase(const DescriptorSetLayoutBase &other)
+        : handle_(), bindings(other.bindings), layout(other.layout) {}
 
-    DescriptorSet(DescriptorSet &&other) noexcept : set(other.set), bindings(std::move(other.bindings)) {}
+    DescriptorSetLayoutBase(DescriptorSetLayoutBase &&other) noexcept
+        : handle_(std::move(other.handle_)),
+          bindings(std::exchange(other.bindings, {})),
+          layout(std::exchange(other.layout, {})) {}
 
-    DescriptorSet &operator=(const DescriptorSet &other) = delete;
-
-    DescriptorSet &operator=(DescriptorSet &&other) noexcept {
-        set = other.set;
+    virtual DescriptorSetLayoutBase &operator=(const DescriptorSetLayoutBase &other) {
+        if (this == &other)
+            return *this;
+        handle_.reset();
+        bindings = other.bindings;
+        layout = other.layout;
+        return *this;
+    }
+    virtual DescriptorSetLayoutBase &operator=(DescriptorSetLayoutBase &&other) noexcept {
+        if (this == &other)
+            return *this;
+        handle_ = std::move(other.handle_);
         bindings = std::move(other.bindings);
+        layout = std::move(other.layout);
         return *this;
     }
 
-    [[nodiscard]] vk::DescriptorSet get() const { return set; }
+protected:
+    template<std::size_t N>
+    DescriptorSetLayoutBase(
+            const vk::Device &device,
+            vk::DescriptorSetLayoutCreateFlags flags,
+            const std::array<vk::DescriptorSetLayoutBinding, N> &bindings
+    )
+        : handle_( //
+                  device.createDescriptorSetLayoutUnique({.flags = flags, .bindingCount = N, .pBindings = bindings.data()})
+          ),
+          bindings(bindings),
+          layout((assert(handle_), *handle_)) {}
 
-    [[nodiscard]] std::span<const vk::DescriptorSetLayoutBinding> getBindings() const { return bindings; }
+    using Type = vk::DescriptorType;
+    using ShaderStage = vk::ShaderStageFlagBits;
+    using ShaderStages = vk::ShaderStageFlags;
 
-    [[nodiscard]] vk::WriteDescriptorSet write(uint32_t index) const {
-        vk::DescriptorSetLayoutBinding binding = bindings.at(index);
+    template<typename... Args>
+    static std::array<vk::DescriptorSetLayoutBinding, sizeof...(Args)> validate(Args... args) {
+        auto result = std::array{static_cast<vk::DescriptorSetLayoutBinding>(args)...};
+        validateBindings(result);
+        return result;
+    }
+
+    static consteval vk::DescriptorSetLayoutBinding binding(
+            uint32_t index, vk::DescriptorType type, ShaderStages stages, uint32_t count = 1
+    ) {
+        return {index, type, count, stages};
+    }
+
+    static consteval auto combinedImageSampler(uint32_t index, vk::ShaderStageFlags stages, uint32_t count = 1) {
+        return DescriptorBinding<vk::DescriptorType::eCombinedImageSampler>(index, count, stages);
+    }
+
+    static consteval auto inlineUniformBlock(uint32_t index, vk::ShaderStageFlags stages, uint32_t size) {
+        return DescriptorBinding<vk::DescriptorType::eInlineUniformBlock>{index, size, stages};
+    }
+
+    static consteval auto uniformBuffer(uint32_t index, ShaderStages stages, uint32_t count = 1) {
+        return DescriptorBinding<vk::DescriptorType::eUniformBuffer>{index, count, stages};
+    }
+
+private:
+    static void validateBindings(std::span<const vk::DescriptorSetLayoutBinding> bindings);
+};
+
+
+struct ShaderInterfaceLayout {
+    const std::vector<vk::DescriptorSetLayout> descriptorSetLayouts;
+    const std::vector<vk::PushConstantRange> pushConstantRanges;
+};
+
+class DescriptorSet {
+public:
+    vk::DescriptorSet set;
+    std::span<const vk::DescriptorSetLayoutBinding> bindings;
+
+    DescriptorSet() = default;
+
+    explicit DescriptorSet(const vk::DescriptorSet &set, std::span<const vk::DescriptorSetLayoutBinding> bindings)
+        : set(set), bindings(bindings) {}
+
+    [[nodiscard]] vk::WriteDescriptorSet write(const vk::DescriptorSetLayoutBinding &binding) const {
         return {
             .dstSet = set,
-            .dstBinding = index,
+            .dstBinding = binding.binding,
             .dstArrayElement = 0,
             .descriptorCount = binding.descriptorCount,
             .descriptorType = binding.descriptorType,
         };
+    }
+
+    [[nodiscard]] vk::WriteDescriptorSet write(
+            const DescriptorBinding<vk::DescriptorType::eCombinedImageSampler> &binding, const vk::DescriptorImageInfo &image_info
+    ) const {
+        return write(binding).setImageInfo(image_info);
+    }
+
+    [[nodiscard]] vk::WriteDescriptorSet write(
+            const DescriptorBinding<vk::DescriptorType::eInlineUniformBlock> &binding,
+            const vk::WriteDescriptorSetInlineUniformBlock &uniform_block
+    ) const {
+        return write(binding).setPNext(&uniform_block);
+    }
+
+    [[nodiscard]] vk::WriteDescriptorSet write(
+            const DescriptorBinding<vk::DescriptorType::eUniformBuffer> &binding, const vk::DescriptorBufferInfo &buffer_info
+    ) const {
+        return write(binding).setBufferInfo(buffer_info);
+    }
+
+    DescriptorSet(const DescriptorSet &other) = default;
+
+    DescriptorSet(DescriptorSet &&other) noexcept
+        : set(std::exchange(other.set, {})), bindings(std::exchange(other.bindings, {})) {}
+
+    DescriptorSet &operator=(const DescriptorSet &other) {
+        if (this == &other)
+            return *this;
+        set = other.set;
+        bindings = other.bindings;
+        return *this;
+    }
+
+    DescriptorSet &operator=(DescriptorSet &&other) noexcept {
+        if (this == &other)
+            return *this;
+        set = std::exchange(other.set, {});
+        bindings = std::exchange(other.bindings, {});
+        return *this;
     }
 };
 
@@ -96,11 +181,10 @@ public:
         });
     }
 
-    DescriptorSet allocate(const DescriptorSetLayout &layout) {
-        vk::DescriptorSetLayout vk_layout = layout.get();
-        vk::DescriptorSetAllocateInfo info = {.descriptorPool = *pool, .descriptorSetCount = 1, .pSetLayouts = &vk_layout};
+    DescriptorSet allocate(const DescriptorSetLayoutBase &layout) {
+        vk::DescriptorSetAllocateInfo info = {.descriptorPool = *pool, .descriptorSetCount = 1, .pSetLayouts = &layout.layout};
         vk::DescriptorSet set = device.allocateDescriptorSets(info).at(0);
-        return DescriptorSet(set, std::vector(layout.bindings));
+        return DescriptorSet(set, layout.bindings);
     }
 
 private:

@@ -66,12 +66,12 @@ struct ImageResourceAccess {
     vk::AccessFlags2 access = vk::AccessFlagBits2::eNone;
     vk::ImageLayout layout = vk::ImageLayout::eUndefined;
 
-    static const ImageResourceAccess TRANSFER_WRITE;
-    static const ImageResourceAccess FRAGMENT_SHADER_READ;
-    static const ImageResourceAccess COLOR_ATTACHMENT_WRITE;
-    static const ImageResourceAccess DEPTH_ATTACHMENT_WRITE;
-    static const ImageResourceAccess DEPTH_ATTACHMENT_READ;
-    static const ImageResourceAccess PRESENT_SRC;
+    static const ImageResourceAccess TransferWrite;
+    static const ImageResourceAccess FragmentShaderRead;
+    static const ImageResourceAccess ColorAttachmentWrite;
+    static const ImageResourceAccess DepthAttachmentWrite;
+    static const ImageResourceAccess DepthAttachmentRead;
+    static const ImageResourceAccess PresentSrc;
 };
 
 class ImageResource {

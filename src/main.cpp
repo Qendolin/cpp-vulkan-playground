@@ -2,6 +2,7 @@
 #include <iostream>
 
 #include "Application.h"
+#include "GraphicsBackend.h"
 #include "Logger.h"
 
 int main() {
@@ -11,7 +12,8 @@ int main() {
 #endif
 
     try {
-        Application app;
+        AppContext ctx({.width = 1600, .height = 900, .title = "Vulkan Playground"});
+        Application app(ctx);
         app.run();
     } catch (const std::exception &e) {
         std::cerr << e.what() << std::endl;
